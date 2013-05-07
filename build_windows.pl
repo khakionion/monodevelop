@@ -115,6 +115,7 @@ copy "$root/monodevelop/dependencies/gdk-pixbuf.loaders", "$mdRoot/etc/gtk-2.0";
 
 # Mono Libraries dependency files
 system("xcopy /s /y \"$monolibPath\" \"$mdRoot/bin\"");
+system("xcopy /y \"$root/monodevelop/dependencies/monodoc.dll\" \"$mdRoot/bin\"");
 
 chdir "$root/boo";
 system("$nant -t:net-4.0 rebuild") && die ("Failed to build Boo");
