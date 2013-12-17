@@ -2,9 +2,9 @@ using System;
 using System.IO;
 using Gtk;
 using MonoDevelop.Core;
+using MonoDevelop.Components.Commands;
 using MonoDevelop.Ide.Gui;
 using MonoDevelop.Ide;
-using System.Text;
 using System.Linq;
 
 namespace MonoDevelop.VersionControl.Views
@@ -13,7 +13,7 @@ namespace MonoDevelop.VersionControl.Views
 	{
 	}
 	
-	public class LogView : BaseView, ILogView 
+	public class LogView : BaseView, ILogView
 	{
 		LogWidget widget;
 		VersionInfo vinfo;
@@ -22,7 +22,7 @@ namespace MonoDevelop.VersionControl.Views
 		
 		public LogWidget LogWidget {
 			get {
-				return this.widget;
+				return widget;
 			}
 		}
 		
@@ -87,7 +87,7 @@ namespace MonoDevelop.VersionControl.Views
 			: base (Path.GetFileName (filepath) + " Log")
 		{
 			try {
-				this.vinfo = vc.GetVersionInfo (filepath);
+				this.vinfo = vc.GetVersionInfo (filepath, VersionInfoQueryFlags.IgnoreCache);
 			}
 			catch (Exception ex) {
 				MessageService.ShowException (ex, GettextCatalog.GetString ("Version control command failed."));
@@ -153,6 +153,19 @@ namespace MonoDevelop.VersionControl.Views
 		{
 		}
 		#endregion
+
+		[CommandHandler (MonoDevelop.Ide.Commands.EditCommands.Copy)]
+		protected void OnCopy ()
+		{
+			string data = widget.DiffText;
+			if (data == null)
+				return;
+
+			var clipboard = Clipboard.Get (Gdk.Atom.Intern ("CLIPBOARD", false));
+			clipboard.Text = data;
+			clipboard = Clipboard.Get (Gdk.Atom.Intern ("PRIMARY", false));
+			clipboard.Text = data;
+		}
 	}
 
 }

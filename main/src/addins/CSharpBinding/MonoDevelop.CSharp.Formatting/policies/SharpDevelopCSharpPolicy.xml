@@ -41,7 +41,8 @@ THE SOFTWARE.
 	<IndentBreakStatements>True</IndentBreakStatements>
 	<AlignEmbeddedUsingStatements>True</AlignEmbeddedUsingStatements>
 	<AlignEmbeddedIfStatements>True</AlignEmbeddedIfStatements>
-	<PropertyFormatting>AllowOneLine</PropertyFormatting>
+	<SimplePropertyFormatting>AllowOneLine</SimplePropertyFormatting>
+	<AutoPropertyFormatting>AllowOneLine</AutoPropertyFormatting>
 	<NamespaceBraceStyle>NextLine</NamespaceBraceStyle>
 	<ClassBraceStyle>NextLine</ClassBraceStyle>
 	<InterfaceBraceStyle>NextLine</InterfaceBraceStyle>
@@ -54,8 +55,8 @@ THE SOFTWARE.
 	<PropertyBraceStyle>EndOfLine</PropertyBraceStyle>
 	<PropertyGetBraceStyle>EndOfLine</PropertyGetBraceStyle>
 	<PropertySetBraceStyle>EndOfLine</PropertySetBraceStyle>
-	<AllowPropertyGetBlockInline>True</AllowPropertyGetBlockInline>
-	<AllowPropertySetBlockInline>True</AllowPropertySetBlockInline>
+	<SimpleGetBlockFormatting>AllowOneLine</SimpleGetBlockFormatting>
+	<SimpleSetBlockFormatting>AllowOneLine</SimpleSetBlockFormatting>
 	<EventBraceStyle>EndOfLine</EventBraceStyle>
 	<EventAddBraceStyle>EndOfLine</EventAddBraceStyle>
 	<EventRemoveBraceStyle>EndOfLine</EventRemoveBraceStyle>
@@ -63,14 +64,8 @@ THE SOFTWARE.
 	<AllowEventRemoveBlockInline>True</AllowEventRemoveBlockInline>
 	<StatementBraceStyle>EndOfLine</StatementBraceStyle>
 	<AllowIfBlockInline>False</AllowIfBlockInline>
-	<IfElseBraceForcement>AddBraces</IfElseBraceForcement>
-	<ForBraceForcement>AddBraces</ForBraceForcement>
-	<ForEachBraceForcement>AddBraces</ForEachBraceForcement>
-	<WhileBraceForcement>AddBraces</WhileBraceForcement>
-	<UsingBraceForcement>AddBraces</UsingBraceForcement>
-	<FixedBraceForcement>AddBraces</FixedBraceForcement>
 	<ElseNewLinePlacement>SameLine</ElseNewLinePlacement>
-	<ElseIfNewLinePlacement>DoNotCare</ElseIfNewLinePlacement>
+	<ElseIfNewLinePlacement>SameLine</ElseIfNewLinePlacement>
 	<CatchNewLinePlacement>SameLine</CatchNewLinePlacement>
 	<FinallyNewLinePlacement>SameLine</FinallyNewLinePlacement>
 	<WhileNewLinePlacement>SameLine</WhileNewLinePlacement>
@@ -147,7 +142,7 @@ THE SOFTWARE.
 	<ConditionalOperatorBeforeSeparatorSpace>True</ConditionalOperatorBeforeSeparatorSpace>
 	<ConditionalOperatorAfterSeparatorSpace>True</ConditionalOperatorAfterSeparatorSpace>
 	<SpacesWithinBrackets>False</SpacesWithinBrackets>
-	<SpacesBeforeBrackets>True</SpacesBeforeBrackets>
+	<SpacesBeforeBrackets>False</SpacesBeforeBrackets>
 	<BeforeBracketComma>False</BeforeBracketComma>
 	<AfterBracketComma>True</AfterBracketComma>
 	<SpacesBeforeForSemicolon>False</SpacesBeforeForSemicolon>
@@ -161,4 +156,7 @@ THE SOFTWARE.
 	<BlankLinesBetweenFields>0</BlankLinesBetweenFields>
 	<BlankLinesBetweenEventFields>0</BlankLinesBetweenEventFields>
 	<BlankLinesBetweenMembers>1</BlankLinesBetweenMembers>
+	<BlankLinesInsideRegion>1</BlankLinesInsideRegion>
+	<BlankLinesAroundRegion>1</BlankLinesAroundRegion>
+	<IndentPreprocessorDirectives>True</IndentPreprocessorDirectives>
 </CSharpFormattingPolicy>

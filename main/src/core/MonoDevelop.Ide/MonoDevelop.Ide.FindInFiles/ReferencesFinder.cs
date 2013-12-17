@@ -32,6 +32,7 @@ using MonoDevelop.Core;
 using MonoDevelop.Projects;
 using ICSharpCode.NRefactory.TypeSystem;
 using MonoDevelop.Ide.TypeSystem;
+using System.Threading.Tasks;
 
 namespace MonoDevelop.Ide.FindInFiles
 {
@@ -96,7 +97,7 @@ namespace MonoDevelop.Ide.FindInFiles
 		static IEnumerable<SearchCollector.FileList> GetFileNames (Solution solution, object node, RefactoryScope scope, 
 		                                                           IProgressMonitor monitor, IEnumerable<object> searchNodes)
 		{
-			if (!(node is IField) && node is IVariable || scope == RefactoryScope.File) {
+			if (!(node is IField) && !(node is IParameter) && node is IVariable || scope == RefactoryScope.File) {
 				string fileName;
 				if (node is IEntity) {
 					fileName = ((IEntity)node).Region.FileName;
@@ -122,22 +123,27 @@ namespace MonoDevelop.Ide.FindInFiles
 					yield return fileList;
 				yield break;
 			}
+			var par = node as IParameter;
+			if (par != null) {
+				node = par.Owner;
+			}
 
-			var entity = (IEntity)node;
+			var compilationProvider = (ICompilationProvider)node;
 			switch (scope) {
 			case RefactoryScope.DeclaringType:
+				var entity = (IEntity)compilationProvider;
 				if (entity.DeclaringTypeDefinition != null)
 					yield return SearchCollector.CollectDeclaringFiles (entity.DeclaringTypeDefinition);
 				else
 					yield return SearchCollector.CollectDeclaringFiles (entity);
 				break;
 			case RefactoryScope.Project:
-				var sourceProject = TypeSystemService.GetProject (entity.Compilation.MainAssembly.UnresolvedAssembly.Location);
-				foreach (var file in SearchCollector.CollectFiles (sourceProject, searchNodes.Cast<IEntity> ()))
+				var sourceProject = TypeSystemService.GetProject (compilationProvider.Compilation.MainAssembly.UnresolvedAssembly.Location);
+				foreach (var file in SearchCollector.CollectFiles (sourceProject, searchNodes))
 					yield return file;
 				break;
 			default:
-				var files = SearchCollector.CollectFiles (solution, searchNodes.Cast<IEntity> ()).ToList ();
+				var files = SearchCollector.CollectFiles (solution, searchNodes).ToList ();
 				if (monitor != null)
 					monitor.BeginTask (GettextCatalog.GetString ("Searching for references in solution..."), files.Count);
 				foreach (var file in files) {
@@ -164,14 +170,6 @@ namespace MonoDevelop.Ide.FindInFiles
 			return projects;
 		}
 
-		public static bool HasOverloads (Solution solution, object item)
-		{
-			if (!(item is IMember))
-				return false;
-
-			return CollectMembers (solution, (IMember)item, RefactoryScope.Unknown).Count () > 1;
-		}
-		
 		public static IEnumerable<MemberReference> FindReferences (Solution solution, object member, bool searchForAllOverloads, RefactoryScope scope = RefactoryScope.Unknown, IProgressMonitor monitor = null)
 		{
 			if (member == null)
@@ -190,18 +188,19 @@ namespace MonoDevelop.Ide.FindInFiles
 				searchNodes = CollectMembers ((IType)member).ToList<object> ();
 			} else if (member is IEntity) {
 				var e = (IEntity)member;
-				if (e.EntityType == EntityType.Destructor) {
+				if (e.SymbolKind == SymbolKind.Destructor) {
 					foreach (var r in FindReferences (solution, e.DeclaringType, searchForAllOverloads, scope, monitor)) {
 						yield return r;
 					}
 					yield break;
 				}
-				if (member is IMember && searchForAllOverloads)
-					searchNodes = CollectMembers (solution, (IMember)member, scope).ToList<object> ();
+				if (member is IMember)
+					searchNodes = CollectMembers (solution, (IMember)member, scope, searchForAllOverloads).ToList<object> ();
 			}
 			// prepare references finder
 			var preparedFinders = new List<Tuple<ReferenceFinder, Project, IProjectContent, List<FilePath>>> ();
 			var curList = new List<FilePath> ();
+			int totalFiles = 0;
 			foreach (var info in GetFileNames (solution, member, scope, monitor, searchNodes)) {
 				string oldMime = null;
 				foreach (var file in info.Files) {
@@ -220,31 +219,36 @@ namespace MonoDevelop.Ide.FindInFiles
 						preparedFinders.Add (Tuple.Create (finder, info.Project, info.Content, curList));
 					}
 					curList.Add (file);
+					totalFiles++;
 				}
 			}
 			
 			// execute search
+			if (monitor != null)
+				monitor.BeginTask (GettextCatalog.GetString ("Analyzing files..."), totalFiles);
 			foreach (var tuple in preparedFinders) {
 				var finder = tuple.Item1;
-				foreach (var foundReference in finder.FindReferences (tuple.Item2, tuple.Item3, tuple.Item4, searchNodes)) {
+				foreach (var foundReference in finder.FindReferences (tuple.Item2, tuple.Item3, tuple.Item4, monitor, searchNodes)) {
 					if (monitor != null && monitor.IsCancelRequested)
 						yield break;
 					yield return foundReference;
 				}
 			}
+			if (monitor != null)
+				monitor.EndTask ();
 		}
-		
-		public abstract IEnumerable<MemberReference> FindReferences (Project project, IProjectContent content, IEnumerable<FilePath> files, IEnumerable<object> searchedMembers);
 
-		internal static IEnumerable<IMember> CollectMembers (Solution solution, IMember member, RefactoryScope scope)
+		public abstract IEnumerable<MemberReference> FindReferences (Project project, IProjectContent content, IEnumerable<FilePath> files, IProgressMonitor monitor, IEnumerable<object> searchedMembers);
+
+		internal static IEnumerable<IMember> CollectMembers (Solution solution, IMember member, RefactoryScope scope, bool includeOverloads = true)
 		{
-			return MemberCollector.CollectMembers (solution, member, scope);
+			return MemberCollector.CollectMembers (solution, member, scope, includeOverloads);
 		}
 		
 		internal static IEnumerable<IEntity> CollectMembers (IType type)
 		{
 			yield return (IEntity)type;
-			foreach (var c in type.GetDefinition ().GetMembers (m => m.EntityType == EntityType.Constructor, GetMemberOptions.IgnoreInheritedMembers)) {
+			foreach (var c in type.GetDefinition ().GetMembers (m => m.SymbolKind == SymbolKind.Constructor, GetMemberOptions.IgnoreInheritedMembers)) {
 				if (!c.IsSynthetic)
 					yield return c;
 			}

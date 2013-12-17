@@ -58,7 +58,7 @@ namespace MonoDevelop.Components.MainToolbar
 
 		public virtual string GetDescriptionMarkupText (Widget widget)
 		{
-			return GLib.Markup.EscapeText (Description);
+			return AmbienceService.EscapeText (Description);
 		}
 
 
@@ -311,25 +311,25 @@ namespace MonoDevelop.Components.MainToolbar
 			get {
 				string loc = GettextCatalog.GetString ("type \"{0}\"", member.DeclaringTypeDefinition.Name);
 
-				switch (member.EntityType) {
-				case EntityType.Field:
+				switch (member.SymbolKind) {
+				case SymbolKind.Field:
 					return GettextCatalog.GetString ("field ({0})", loc);
-				case EntityType.Property:
+				case SymbolKind.Property:
 					return GettextCatalog.GetString ("property ({0})", loc);
-				case EntityType.Indexer:
+				case SymbolKind.Indexer:
 					return GettextCatalog.GetString ("indexer ({0})", loc);
-				case EntityType.Event:
+				case SymbolKind.Event:
 					return GettextCatalog.GetString ("event ({0})", loc);
-				case EntityType.Method:
+				case SymbolKind.Method:
 					return GettextCatalog.GetString ("method ({0})", loc);
-				case EntityType.Operator:
+				case SymbolKind.Operator:
 					return GettextCatalog.GetString ("operator ({0})", loc);
-				case EntityType.Constructor:
+				case SymbolKind.Constructor:
 					return GettextCatalog.GetString ("constructor ({0})", loc);
-				case EntityType.Destructor:
+				case SymbolKind.Destructor:
 					return GettextCatalog.GetString ("destrutcor ({0})", loc);
 				default:
-					throw new NotSupportedException (member.EntityType + " is not supported.");
+					throw new NotSupportedException (member.SymbolKind + " is not supported.");
 				}
 			}
 		}
@@ -344,8 +344,8 @@ namespace MonoDevelop.Components.MainToolbar
 		public override string GetMarkupText (Widget widget)
 		{
 			if (useFullName)
-				return HighlightMatch (widget, member.EntityType == EntityType.Constructor ? member.DeclaringTypeDefinition.FullName :  member.FullName, match);
-			return HighlightMatch (widget, member.EntityType == EntityType.Constructor ? member.DeclaringTypeDefinition.Name : member.Name, match);
+				return HighlightMatch (widget, member.SymbolKind == SymbolKind.Constructor ? member.DeclaringTypeDefinition.FullName :  member.FullName, match);
+			return HighlightMatch (widget, member.SymbolKind == SymbolKind.Constructor ? member.DeclaringTypeDefinition.Name : member.Name, match);
 		}
 		
 		internal Ambience Ambience { 
@@ -357,10 +357,14 @@ namespace MonoDevelop.Components.MainToolbar
 	class CommandResult: SearchResult
 	{
 		Command command;
+		CommandInfo ci;
+		CommandTargetRoute route;
 
-		public CommandResult (Command cmd, string match, string matchedString, int rank): base (match, matchedString, rank)
+		public CommandResult (Command cmd, CommandInfo ci, CommandTargetRoute route, string match, string matchedString, int rank): base (match, matchedString, rank)
 		{
+			this.ci = ci;
 			command = cmd;
+			this.route = route;
 		}
 
 		public override SearchResultType SearchResultType {
@@ -396,12 +400,12 @@ namespace MonoDevelop.Components.MainToolbar
 		public override string Description {
 			get {
 				string desc = "";
-				if (!string.IsNullOrEmpty (command.AccelKey))
-					desc = KeyBindingManager.BindingToDisplayLabel (command.AccelKey, false);
-				if (!string.IsNullOrEmpty (command.Description)) {
+				if (!string.IsNullOrEmpty (ci.AccelKey))
+					desc = KeyBindingManager.BindingToDisplayLabel (ci.AccelKey, false);
+				if (!string.IsNullOrEmpty (ci.Description)) {
 					if (desc.Length > 0)
 						desc += " - ";
-					desc += command.Description;
+					desc += ci.Description;
 				}
 				else if (desc.Length == 0) {
 					desc = "Command";
@@ -425,7 +429,7 @@ namespace MonoDevelop.Components.MainToolbar
 
 		public override void Activate ()
 		{
-			IdeApp.CommandService.DispatchCommand (command.Id);
+			IdeApp.CommandService.DispatchCommand (command.Id, null, route.InitialTarget, CommandSource.MainToolbar);
 		}
 	}
 }

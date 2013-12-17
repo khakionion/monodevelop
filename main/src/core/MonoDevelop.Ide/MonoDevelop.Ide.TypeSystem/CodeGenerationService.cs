@@ -38,6 +38,7 @@ using ICSharpCode.NRefactory;
 using MonoDevelop.Ide.TypeSystem;
 using MonoDevelop.Ide;
 using ICSharpCode.NRefactory.CSharp.TypeSystem;
+using System.Threading.Tasks;
 
 namespace MonoDevelop.Ide.TypeSystem
 {
@@ -66,8 +67,10 @@ namespace MonoDevelop.Ide.TypeSystem
 			if (newMember is CodeMemberMethod)
 				options.BracingStyle = "C";
 			generator.GenerateCodeFromMember (newMember, sw, options);
-			
-			suitableInsertionPoint.Insert (data, sw.ToString ());
+
+			var code = sw.ToString ();
+			if (!string.IsNullOrEmpty (code))
+				suitableInsertionPoint.Insert (data, code);
 			if (!isOpen) {
 				try {
 					File.WriteAllText (type.Region.FileName, data.Text);
@@ -104,7 +107,95 @@ namespace MonoDevelop.Ide.TypeSystem
 				}
 			}
 		}
+
+		public static Task<bool> InsertMemberWithCursor (
+			string operation, ITypeDefinition parentType, IUnresolvedTypeDefinition part,
+			IUnresolvedMember newMember, bool implementExplicit = false)
+		{
+			var tcs = new TaskCompletionSource<bool>();
+			if (parentType == null)
+				return tcs.Task;
+			part = part ?? parentType.Parts.FirstOrDefault ();
+			if (part == null)
+				return tcs.Task;
+			var loadedDocument = IdeApp.Workbench.OpenDocument (part.Region.FileName);
+			loadedDocument.RunWhenLoaded (delegate {
+				var editor = loadedDocument.Editor;
+				var loc = part.Region.Begin;
+				var parsedDocument = loadedDocument.UpdateParseDocument ();
+				var declaringType = parsedDocument.GetInnermostTypeDefinition (loc);
+				var mode = new InsertionCursorEditMode (
+					editor.Parent,
+					CodeGenerationService.GetInsertionPoints (loadedDocument, declaringType));
+				if (mode.InsertionPoints.Count == 0) {
+					MessageService.ShowError (
+						GettextCatalog.GetString ("No valid insertion point can be found in type '{0}'.", declaringType.Name)
+						);
+					return;
+				}
+				var suitableInsertionPoint = GetSuitableInsertionPoint (mode.InsertionPoints, part, newMember);
+				if (suitableInsertionPoint != null)
+					mode.CurIndex = mode.InsertionPoints.IndexOf (suitableInsertionPoint);
+				else
+					mode.CurIndex = 0;
+
+				var helpWindow = new Mono.TextEditor.PopupWindow.InsertionCursorLayoutModeHelpWindow () {
+					TitleText = operation
+				};
+				mode.HelpWindow = helpWindow;
+
+				mode.StartMode ();
+				mode.Exited += delegate(object s, InsertionCursorEventArgs iCArgs) {
+					if (!iCArgs.Success) {
+						tcs.SetResult (false);
+						return;
+					}
+					var generator = CreateCodeGenerator (editor, parentType.Compilation);
+					generator.IndentLevel = CalculateBodyIndentLevel (declaringType);
+					var generatedCode = generator.CreateMemberImplementation (parentType, part, newMember, implementExplicit);
+					mode.InsertionPoints[mode.CurIndex].Insert (editor, generatedCode.Code);
+					tcs.SetResult (true);
+				};
+			});
+
+			return tcs.Task;
+		}
 		
+		public static Task<bool> InsertMember (
+			ITypeDefinition parentType, IUnresolvedTypeDefinition part,
+			IUnresolvedMember newMember, bool implementExplicit = false)
+		{
+			var tcs = new TaskCompletionSource<bool>();
+			if (parentType == null)
+				return tcs.Task;
+			part = part ?? parentType.Parts.FirstOrDefault ();
+			if (part == null)
+				return tcs.Task;
+
+			var loadedDocument = IdeApp.Workbench.OpenDocument (part.Region.FileName);
+			loadedDocument.RunWhenLoaded (delegate {
+				var editor = loadedDocument.Editor;
+				var loc = part.Region.Begin;
+				var parsedDocument = loadedDocument.UpdateParseDocument ();
+				var declaringType = parsedDocument.GetInnermostTypeDefinition (loc);
+				var insertionPoints = CodeGenerationService.GetInsertionPoints (loadedDocument, declaringType);
+				if (insertionPoints.Count == 0) {
+					MessageService.ShowError (
+						GettextCatalog.GetString ("No valid insertion point can be found in type '{0}'.", declaringType.Name)
+						);
+					return;
+				}
+				var suitableInsertionPoint = GetSuitableInsertionPoint (insertionPoints, part, newMember) ?? insertionPoints.First ();
+
+				var generator = CreateCodeGenerator (editor, parentType.Compilation);
+				generator.IndentLevel = CalculateBodyIndentLevel (declaringType);
+				var generatedCode = generator.CreateMemberImplementation (parentType, part, newMember, implementExplicit);
+				suitableInsertionPoint.Insert (editor, generatedCode.Code);
+			});
+
+			return tcs.Task;
+		}
+
 		public static int CalculateBodyIndentLevel (IUnresolvedTypeDefinition declaringType)
 		{
 			if (declaringType == null)
@@ -340,20 +431,20 @@ namespace MonoDevelop.Ide.TypeSystem
 		static InsertionPoint GetSuitableInsertionPoint (IEnumerable<InsertionPoint> points, IUnresolvedTypeDefinition cls, IUnresolvedMember member)
 		{
 			var mainPart = cls;
-			switch (member.EntityType) {
-			case EntityType.Field:
+			switch (member.SymbolKind) {
+			case SymbolKind.Field:
 				return GetNewFieldPosition (points, mainPart);
-			case EntityType.Method:
-			case EntityType.Constructor:
-			case EntityType.Destructor:
-			case EntityType.Operator:
+			case SymbolKind.Method:
+			case SymbolKind.Constructor:
+			case SymbolKind.Destructor:
+			case SymbolKind.Operator:
 				return GetNewMethodPosition (points, mainPart);
-			case EntityType.Event:
+			case SymbolKind.Event:
 				return GetNewEventPosition (points, mainPart);
-			case EntityType.Property:
+			case SymbolKind.Property:
 				return GetNewPropertyPosition (points, mainPart);
 			}
-			throw new InvalidOperationException ("Invalid member type: " + member.EntityType);
+			throw new InvalidOperationException ("Invalid member type: " + member.SymbolKind);
 		}
 		
 		static InsertionPoint GetSuitableInsertionPoint (IEnumerable<InsertionPoint> points, IUnresolvedTypeDefinition cls, CodeTypeMember mem)

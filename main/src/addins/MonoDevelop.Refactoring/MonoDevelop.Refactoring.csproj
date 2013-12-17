@@ -19,14 +19,19 @@
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
     <ConsolePause>False</ConsolePause>
+    <GenerateDocumentation>true</GenerateDocumentation>
+    <NoWarn>1591;1573</NoWarn>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-    <DebugType>none</DebugType>
-    <Optimize>False</Optimize>
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
     <OutputPath>..\..\..\build\AddIns\MonoDevelop.Refactoring</OutputPath>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
     <ConsolePause>False</ConsolePause>
+    <DebugSymbols>true</DebugSymbols>
+    <GenerateDocumentation>true</GenerateDocumentation>
+    <NoWarn>1591;1573</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System" />
@@ -108,6 +113,45 @@
     <Compile Include="MonoDevelop.CodeIssues\DefaultCodeIssueCategories.cs" />
     <Compile Include="MonoDevelop.CodeIssues\CodeIssueAddinNode.cs" />
     <Compile Include="MonoDevelop.Refactoring\ResolveCommandHandler.cs" />
+    <Compile Include="MonoDevelop.Refactoring\ExtensionMethods.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\CodeIssuePad.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\IGroupingProvider.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\IssueSummary.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\IssueGroup.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\CategoryGroupingProvider.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\GroupingProviderChainControl.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\GroupingDescriptionAttribute.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\NullGroupingProvider.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\IssueGroupEventArgs.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\GroupingProviderEventArgs.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\AbstractGroupingProvider.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\ProviderGroupingProvider.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\SeverityGroupingProvider.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\AnalysisState.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\AnalysisStateChangeEventArgs.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\CodeAnalysisBatchRunner.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\IIssueTreeNode.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\IIssueSummarySink.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\IssueTreeNodeEventArgs.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\ActionSummary.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\BatchFixer.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\IssueMatch.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\ExactIssueMatcher.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\IActionMatcher.cs" />
+    <Compile Include="AddinInfo.cs" />
+    <Compile Include="MonoDevelop.Refactoring\FindDerivedSymbolsHandler.cs" />
+    <Compile Include="MonoDevelop.Refactoring\FindMemberOverloadsHandler.cs" />
+    <Compile Include="MonoDevelop.Refactoring\FindExtensionMethodHandler.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\Runner\IAnalysisJob.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\Runner\AnalysisJobQueue.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\Runner\CodeIssueEventArgs.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\SolutionAnalysisJob.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\Runner\SimpleAnalysisJob.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\Runner\ProgressMonitorWrapperJob.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\Runner\JobContext.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\Runner\IJobContext.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\Runner\JobSlice.cs" />
+    <Compile Include="MonoDevelop.CodeIssues\Runner\JobStatus.cs" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="MonoDevelop.Refactoring\" />
@@ -115,6 +159,7 @@
     <Folder Include="MonoDevelop.AnalysisCore\" />
     <Folder Include="MonoDevelop.CodeIssues\" />
     <Folder Include="MonoDevelop.CodeActions\" />
+    <Folder Include="MonoDevelop.CodeIssues\Runner\" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="MonoDevelop.Refactoring.addin.xml">
@@ -160,11 +205,6 @@
       <Name>ICSharpCode.NRefactory.CSharp</Name>
       <Private>False</Private>
     </ProjectReference>
-    <ProjectReference Include="..\..\core\Mono.Debugging\Mono.Debugging.csproj">
-      <Project>{90C99ADB-7D4B-4EB4-98C2-40BD1B14C7D2}</Project>
-      <Name>Mono.Debugging</Name>
-      <Private>False</Private>
-    </ProjectReference>
     <ProjectReference Include="..\MonoDevelop.Debugger\MonoDevelop.Debugger.csproj">
       <Project>{2357AABD-08C7-4808-A495-8FF2D3CDFDB0}</Project>
       <Name>MonoDevelop.Debugger</Name>
@@ -173,6 +213,16 @@
     <ProjectReference Include="..\..\..\external\mono-addins\Mono.Addins\Mono.Addins.csproj">
       <Project>{91DD5A2D-9FE3-4C3C-9253-876141874DAD}</Project>
       <Name>Mono.Addins</Name>
+      <Private>False</Private>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\external\xwt\Xwt\Xwt.csproj">
+      <Project>{92494904-35FA-4DC9-BDE9-3A3E87AC49D3}</Project>
+      <Name>Xwt</Name>
+      <Private>False</Private>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\external\debugger-libs\Mono.Debugging\Mono.Debugging.csproj">
+      <Project>{90C99ADB-7D4B-4EB4-98C2-40BD1B14C7D2}</Project>
+      <Name>Mono.Debugging</Name>
       <Private>False</Private>
     </ProjectReference>
   </ItemGroup>

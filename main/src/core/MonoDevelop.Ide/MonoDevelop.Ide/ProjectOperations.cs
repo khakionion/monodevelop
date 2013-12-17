@@ -49,6 +49,10 @@ using MonoDevelop.Core.Instrumentation;
 using Mono.TextEditor;
 using System.Diagnostics;
 using ICSharpCode.NRefactory.Documentation;
+using ICSharpCode.NRefactory.TypeSystem.Implementation;
+using System.Text;
+using MonoDevelop.Ide.TypeSystem;
+using ICSharpCode.NRefactory.TypeSystem;
 
 namespace MonoDevelop.Ide
 {
@@ -224,9 +228,11 @@ namespace MonoDevelop.Ide
 				entity = ((ICSharpCode.NRefactory.TypeSystem.IType)element).GetDefinition ();
 			if (entity == null)
 				return false;
-			
 			if (entity.Region.IsEmpty) {
-				return !string.IsNullOrEmpty (entity.ParentAssembly.UnresolvedAssembly.Location);
+				var parentAssembly = entity.ParentAssembly;
+				if (parentAssembly == null)
+					return false;
+				return !string.IsNullOrEmpty (parentAssembly.UnresolvedAssembly.Location);
 			}
 			return true;
 		}
@@ -267,6 +273,9 @@ namespace MonoDevelop.Ide
 
 			if (entity == null && element is ICSharpCode.NRefactory.TypeSystem.IType)
 				entity = ((ICSharpCode.NRefactory.TypeSystem.IType)element).GetDefinition ();
+			if (entity is SpecializedMember) 
+				entity = ((SpecializedMember)entity).MemberDefinition;
+
 			if (entity == null) {
 				LoggingService.LogError ("Unknown element:" + element);
 				return;
@@ -278,15 +287,17 @@ namespace MonoDevelop.Ide
 			} else {
 				fileName = entity.Region.FileName;
 			}
+			var project = (entity is ITypeDefinition ? ((ITypeDefinition )entity) : entity.DeclaringTypeDefinition).GetProjectWhereTypeIsDefined ();
 			var doc = IdeApp.Workbench.OpenDocument (fileName,
-			                               entity.Region.BeginLine,
-			                               entity.Region.BeginColumn);
+				project,
+				entity.Region.BeginLine,
+				entity.Region.BeginColumn);
 
 			if (isCecilProjectContent && doc != null) {
 				doc.RunWhenLoaded (delegate {
-					var handler = doc.PrimaryView.GetContent<MonoDevelop.Ide.Gui.Content.IUrlHandler> ();
+					var handler = doc.PrimaryView.GetContent<MonoDevelop.Ide.Gui.Content.IOpenNamedElementHandler> ();
 					if (handler != null)
-						handler.Open (entity.GetIdString ());
+						handler.Open (entity);
 				});
 			}
 		}
@@ -296,7 +307,8 @@ namespace MonoDevelop.Ide
 			if (entity == null)
 				throw new ArgumentNullException ("entity");
 			string fileName = entity.Region.FileName;
-			IdeApp.Workbench.OpenDocument (fileName, entity.Region.BeginLine, entity.Region.BeginColumn);
+			// variables are always in the same file -> file is already open, project not needed.
+			IdeApp.Workbench.OpenDocument (fileName, null, entity.Region.BeginLine, entity.Region.BeginColumn);
 		}
 
 		public void RenameItem (IWorkspaceFileObject item, string newName)
@@ -520,9 +532,12 @@ namespace MonoDevelop.Ide
 		
 		public void MarkFileDirty (string filename)
 		{
-			Project entry = IdeApp.Workspace.GetProjectContainingFile (filename);
-			if (entry != null) {
-				entry.SetNeedsBuilding (true);
+			try {
+				var fi = new FileInfo (filename);
+				if (fi.Exists)
+					fi.LastWriteTime = DateTime.Now;
+			} catch (Exception e) {
+				LoggingService.LogError ("Error while marking file as dirty", e);
 			}
 		}
 		
@@ -545,7 +560,6 @@ namespace MonoDevelop.Ide
 						optionsDialog.SelectPanel (panelId);
 					
 					if (MessageService.RunCustomDialog (optionsDialog) == (int)Gtk.ResponseType.Ok) {
-						selectedProject.SetNeedsBuilding (true);
 						foreach (object ob in optionsDialog.ModifiedObjects) {
 							if (ob is Solution) {
 								Save ((Solution)ob);
@@ -581,8 +595,6 @@ namespace MonoDevelop.Ide
 					if (panelId != null)
 						optionsDialog.SelectPanel (panelId);
 					if (MessageService.RunCustomDialog (optionsDialog) == (int) Gtk.ResponseType.Ok) {
-						if (entry is IBuildTarget)
-							((IBuildTarget)entry).SetNeedsBuilding (true, IdeApp.Workspace.ActiveConfiguration);
 						if (entry is IWorkspaceFileObject)
 							Save ((IWorkspaceFileObject) entry);
 						else {
@@ -745,11 +757,11 @@ namespace MonoDevelop.Ide
 					var newRefs = selDialog.ReferenceInformations;
 					
 					var editEventArgs = new EditReferencesEventArgs (project);
-					foreach (ProjectReference refInfo in project.References)
+					foreach (var refInfo in project.References)
 						if (!newRefs.Contains (refInfo))
 							editEventArgs.ReferencesToRemove.Add (refInfo);
 
-					foreach (ProjectReference refInfo in selDialog.ReferenceInformations)
+					foreach (var refInfo in selDialog.ReferenceInformations)
 						if (!project.References.Contains (refInfo))
 							editEventArgs.ReferencesToAdd.Add(refInfo);
 
@@ -1128,6 +1140,9 @@ namespace MonoDevelop.Ide
 				tt.Trace ("Pre-build operations");
 				result = DoBeforeCompileAction ();
 
+				//wait for any custom tools that were triggered by the save, since the build may depend on them
+				MonoDevelop.Ide.CustomTools.CustomToolService.WaitForRunningTools (monitor);
+
 				if (result.ErrorCount == 0) {
 					tt.Trace ("Building item");
 					SolutionItem it = entry as SolutionItem;
@@ -1336,13 +1351,7 @@ namespace MonoDevelop.Ide
 				if (folder.IsRoot) {
 					// Don't allow adding files to the root folder. VS doesn't allow it
 					// If there is no existing folder, create one
-					var itemsFolder = (SolutionFolder) folder.Items.Where (item => item.Name == "Solution Items").FirstOrDefault ();
-					if (itemsFolder == null) {
-						itemsFolder = new SolutionFolder ();
-						itemsFolder.Name = "Solution Items";
-						folder.AddItem (itemsFolder);
-					}
-					folder = itemsFolder;
+					folder = folder.ParentSolution.DefaultSolutionFolder;
 				}
 				
 				if (!fp.IsChildPathOf (folder.BaseDirectory)) {
@@ -1604,8 +1613,8 @@ namespace MonoDevelop.Ide
 						var virtualPath = sourcePath.ToRelative (sourceProject.BaseDirectory);
 						// Grab all the child nodes of the folder we just dragged/dropped
 						filesToRemove = sourceProject.Files.GetFilesInVirtualPath (virtualPath).ToList ();
-						// Add the folder itself so we can remove it from the soruce project if its a Move operation
-						var folder = sourceProject.Files.Where (f => f.ProjectVirtualPath == virtualPath).FirstOrDefault ();
+						// Add the folder itself so we can remove it from the source project if its a Move operation
+						var folder = sourceProject.Files.FirstOrDefault (f => f.ProjectVirtualPath == virtualPath);
 						if (folder != null)
 							filesToRemove.Add (folder);
 					} else {
@@ -1752,6 +1761,12 @@ namespace MonoDevelop.Ide
 				// Remove all files and directories under 'sourcePath'
 				foreach (var v in filesToRemove)
 					sourceProject.Files.Remove (v);
+
+				// Moving an empty folder. A new folder object has to be added to the project.
+				if (movingFolder && !sourceProject.Files.GetFilesInVirtualPath (targetPath).Any ()) {
+					var folderFile = new ProjectFile (targetPath) { Subtype = Subtype.Directory };
+					sourceProject.Files.Add (folderFile);
+				}
 			}
 			
 			var pfolder = sourcePath.ParentDirectory;
@@ -2043,10 +2058,12 @@ namespace MonoDevelop.Ide
 		
 		public IEditableTextFile GetEditableTextFile (FilePath filePath)
 		{
-			foreach (var doc in IdeApp.Workbench.Documents) {
-				if (doc.FileName == filePath) {
-					IEditableTextFile ef = doc.GetContent<IEditableTextFile> ();
-					if (ef != null) return ef;
+			if (IdeApp.IsInitialized) {
+				foreach (var doc in IdeApp.Workbench.Documents) {
+					if (doc.FileName == filePath) {
+						IEditableTextFile ef = doc.GetContent<IEditableTextFile> ();
+						if (ef != null) return ef;
+					}
 				}
 			}
 			
@@ -2057,26 +2074,80 @@ namespace MonoDevelop.Ide
 			
 			return new ProviderProxy (data, file.SourceEncoding, file.HadBOM);
 		}
-		
+
+		/// <summary>
+		/// Performs an edit operation on a text file regardless of it's open in the IDE or not.
+		/// </summary>
+		/// <returns><c>true</c>, if file operation was saved, <c>false</c> otherwise.</returns>
+		/// <param name="filePath">File path.</param>
+		/// <param name="operation">The operation.</param>
+		public bool EditFile (FilePath filePath, Action<TextEditorData> operation)
+		{
+			if (operation == null)
+				throw new ArgumentNullException ("operation");
+			bool hadBom;
+			Encoding encoding;
+			bool isOpen;
+			var data = GetTextEditorData (filePath, out hadBom, out encoding, out isOpen);
+			operation (data);
+			if (!isOpen) {
+				try { 
+					Mono.TextEditor.Utils.TextFileUtility.WriteText (filePath, data.Text, encoding, hadBom);
+				} catch (Exception e) {
+					LoggingService.LogError ("Error while saving changes to : " + filePath, e);
+					return false;
+				}
+			}
+			return true;
+		}
+
 		public TextEditorData GetTextEditorData (FilePath filePath)
 		{
 			bool isOpen;
 			return GetTextEditorData (filePath, out isOpen);
 		}
 
+		public TextEditorData GetReadOnlyTextEditorData (FilePath filePath)
+		{
+			foreach (var doc in IdeApp.Workbench.Documents) {
+				if (doc.FileName == filePath) {
+					return doc.Editor;
+				}
+			}
+			bool hadBom;
+			Encoding encoding;
+			var text = Mono.TextEditor.Utils.TextFileUtility.ReadAllText (filePath, out hadBom, out encoding);
+			var data = new TextEditorData (TextDocument.CreateImmutableDocument (text));
+			data.Document.MimeType = DesktopService.GetMimeTypeForUri (filePath);
+			data.Document.FileName = filePath;
+			data.Text = text;
+			return data;
+		}
+
 		public TextEditorData GetTextEditorData (FilePath filePath, out bool isOpen)
+		{
+			bool hadBom;
+			Encoding encoding;
+			return GetTextEditorData (filePath, out hadBom, out encoding, out isOpen);
+		}
+
+		public TextEditorData GetTextEditorData (FilePath filePath, out bool hadBom, out Encoding encoding, out bool isOpen)
 		{
 			foreach (var doc in IdeApp.Workbench.Documents) {
 				if (doc.FileName == filePath) {
 					isOpen = true;
+					hadBom = false;
+					encoding = Encoding.Default;
 					return doc.Editor;
 				}
 			}
-			
-			TextFile file = TextFile.ReadFile (filePath);
+
+			var text = Mono.TextEditor.Utils.TextFileUtility.ReadAllText (filePath, out hadBom, out encoding);
 			TextEditorData data = new TextEditorData ();
+			data.Document.SuppressHighlightUpdate = true;
+			data.Document.MimeType = DesktopService.GetMimeTypeForUri (filePath);
 			data.Document.FileName = filePath;
-			data.Text = file.Text;
+			data.Text = text;
 			isOpen = false;
 			return data;
 		}

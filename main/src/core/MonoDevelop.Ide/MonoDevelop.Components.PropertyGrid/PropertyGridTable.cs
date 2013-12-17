@@ -30,6 +30,7 @@ using System.ComponentModel;
 using System.Collections.Generic;
 using Cairo;
 using System.Linq;
+using Mono.TextEditor;
 
 namespace MonoDevelop.Components.PropertyGrid
 {
@@ -273,7 +274,7 @@ namespace MonoDevelop.Components.PropertyGrid
 			base.OnSizeAllocated (allocation);
 			int y = 0;
 			MeasureHeight (rows, ref y);
-			if (currentEditorRow != null)
+			if (currentEditor != null && currentEditorRow != null)
 				children [currentEditor] = currentEditorRow.EditorBounds;
 			foreach (var cr in children) {
 				var r = cr.Value;
@@ -338,14 +339,14 @@ namespace MonoDevelop.Components.PropertyGrid
 				int dx = (int)((double)Allocation.Width * dividerPosition);
 				ctx.LineWidth = 1;
 				ctx.Rectangle (0, 0, dx, Allocation.Height);
-				ctx.Color = LabelBackgroundColor;
+				ctx.SetSourceColor (LabelBackgroundColor);
 				ctx.Fill ();
 				ctx.Rectangle (dx, 0, Allocation.Width - dx, Allocation.Height);
-				ctx.Color = new Cairo.Color (1, 1, 1);
+				ctx.SetSourceRGB (1, 1, 1);
 				ctx.Fill ();
 				ctx.MoveTo (dx + 0.5, 0);
 				ctx.RelLineTo (0, Allocation.Height);
-				ctx.Color = DividerColor;
+				ctx.SetSourceColor (DividerColor);
 				ctx.Stroke ();
 	
 				int y = 0;
@@ -371,11 +372,12 @@ namespace MonoDevelop.Components.PropertyGrid
 				if (r.IsCategory) {
 					var rh = h + CategoryTopBottomPadding*2;
 					ctx.Rectangle (0, y, Allocation.Width, rh);
-					Cairo.LinearGradient gr = new LinearGradient (0, y, 0, rh);
-					gr.AddColorStop (0, new Cairo.Color (248d/255d, 248d/255d, 248d/255d));
-					gr.AddColorStop (1, new Cairo.Color (240d/255d, 240d/255d, 240d/255d));
-					ctx.Pattern = gr;
-					ctx.Fill ();
+					using (var gr = new LinearGradient (0, y, 0, rh)) {
+						gr.AddColorStop (0, new Cairo.Color (248d/255d, 248d/255d, 248d/255d));
+						gr.AddColorStop (1, new Cairo.Color (240d/255d, 240d/255d, 240d/255d));
+						ctx.SetSource (gr);
+						ctx.Fill ();
+					}
 
 					if (lastCategory == null || lastCategory.Expanded || lastCategory.AnimatingExpand) {
 						ctx.MoveTo (0, y + 0.5);
@@ -383,11 +385,11 @@ namespace MonoDevelop.Components.PropertyGrid
 					}
 					ctx.MoveTo (0, y + rh - 0.5);
 					ctx.LineTo (Allocation.Width, y + rh - 0.5);
-					ctx.Color = DividerColor;
+					ctx.SetSourceColor (DividerColor);
 					ctx.Stroke ();
 
 					ctx.MoveTo (x, y + CategoryTopBottomPadding);
-					ctx.Color = CategoryLabelColor;
+					ctx.SetSourceColor (CategoryLabelColor);
 					Pango.CairoHelper.ShowLayout (ctx, layout);
 
 					var img = r.Expanded ? discloseUp : discloseDown;
@@ -405,12 +407,12 @@ namespace MonoDevelop.Components.PropertyGrid
 					ctx.Rectangle (0, y, dividerX, h + PropertyTopBottomPadding*2);
 					ctx.Clip ();
 					ctx.MoveTo (x, y + PropertyTopBottomPadding);
-					ctx.Color = Style.Text (state).ToCairoColor ();
+					ctx.SetSourceColor (Style.Text (state).ToCairoColor ());
 					Pango.CairoHelper.ShowLayout (ctx, layout);
 					ctx.Restore ();
 
 					if (r != currentEditorRow)
-						cell.Render (GdkWindow, r.EditorBounds, state);
+						cell.Render (GdkWindow, ctx, r.EditorBounds, state);
 
 					y += r.EditorBounds.Height;
 					indent = PropertyIndent;
@@ -418,24 +420,26 @@ namespace MonoDevelop.Components.PropertyGrid
 
 				if (r.ChildRows != null && r.ChildRows.Count > 0 && (r.Expanded || r.AnimatingExpand)) {
 					int py = y;
-					if (r.AnimatingExpand) {
-						ctx.Save ();
+
+					ctx.Save ();
+					if (r.AnimatingExpand)
 						ctx.Rectangle (0, y, Allocation.Width, r.AnimationHeight);
-						ctx.Clip ();
-					}
+					else
+						ctx.Rectangle (0, 0, Allocation.Width, Allocation.Height);
 
+					ctx.Clip ();
 					Draw (ctx, r.ChildRows, dividerX, x + indent, ref y);
+					ctx.Restore ();
 
 					if (r.AnimatingExpand) {
-						ctx.Restore ();
 						y = py + r.AnimationHeight;
 						// Repaing the background because the cairo clip doesn't work for gdk primitives
 						int dx = (int)((double)Allocation.Width * dividerPosition);
 						ctx.Rectangle (0, y, dx, Allocation.Height - y);
-						ctx.Color = LabelBackgroundColor;
+						ctx.SetSourceColor (LabelBackgroundColor);
 						ctx.Fill ();
 						ctx.Rectangle (dx + 1, y, Allocation.Width - dx - 1, Allocation.Height - y);
-						ctx.Color = new Cairo.Color (1, 1, 1);
+						ctx.SetSourceRGB (1, 1, 1);
 						ctx.Fill ();
 					}
 				}
@@ -570,9 +574,21 @@ namespace MonoDevelop.Components.PropertyGrid
 			if (row != null) {
 				tooltipWindow = new TooltipPopoverWindow ();
 				tooltipWindow.ShowArrow = true;
-				var s = "<b>" + row.Property.DisplayName + "</b>\n\n";
-				s += GLib.Markup.EscapeText (row.Property.Description);
-				tooltipWindow.Markup = s;
+				var s = new System.Text.StringBuilder ("<b>" + row.Property.DisplayName + "</b>");
+				s.AppendLine ();
+				s.AppendLine ();
+				s.Append (GLib.Markup.EscapeText (row.Property.Description));
+				if (row.Property.Converter.CanConvertTo (typeof(string))) {
+					var value = Convert.ToString (row.Property.GetValue (row.Instace));
+					if (!string.IsNullOrEmpty (value)) {
+						const int chunkLength = 200;
+						var multiLineValue = string.Join (Environment.NewLine, Enumerable.Range (0, (int)Math.Ceiling ((double)value.Length / chunkLength)).Select (n => string.Concat (value.Skip (n * chunkLength).Take (chunkLength))));
+						s.AppendLine ();
+						s.AppendLine ();
+						s.Append ("Value: " + multiLineValue);
+					}
+				}
+				tooltipWindow.Markup = s.ToString ();
 				tooltipWindow.ShowPopup (this, new Gdk.Rectangle (0, row.EditorBounds.Y, Allocation.Width, row.EditorBounds.Height), PopupPosition.Right);
 			}
 		}
@@ -651,6 +667,7 @@ namespace MonoDevelop.Components.PropertyGrid
 			if (editSession != null) {
 				Remove (currentEditor);
 				currentEditor.Destroy ();
+				currentEditor = null;
 				editSession.Dispose ();
 				editSession = null;
 				currentEditorRow = null;
@@ -664,6 +681,9 @@ namespace MonoDevelop.Components.PropertyGrid
 			currentEditorRow = row;
 			var cell = GetCell (row);
 			editSession = cell.StartEditing (row.EditorBounds, State);
+			if (editSession == null)
+				return;
+
 			currentEditor = (Gtk.Widget) editSession.Editor;
 			Add (currentEditor);
 			SetAllocation (currentEditor, row.EditorBounds);

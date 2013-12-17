@@ -46,6 +46,7 @@ using ICSharpCode.NRefactory.Semantics;
  * exceptions, now we error out silently, this needs a real solution.
  */
 using MonoDevelop.Ide.TextEditing;
+using System.Linq;
 
 namespace MonoDevelop.Debugger
 {
@@ -139,11 +140,13 @@ namespace MonoDevelop.Debugger
 				Breakpoint bp = new Breakpoint (watch.File, watch.Line);
 				bp.TraceExpression = "{" + watch.Expression + "}";
 				bp.HitAction = HitAction.PrintExpression;
-				breakpoints.Add (bp);
+				lock (breakpoints)
+					breakpoints.Add (bp);
 				pinnedWatches.Bind (watch, bp);
 			} else {
 				pinnedWatches.Bind (watch, null);
-				breakpoints.Remove (watch.BoundTracer);
+				lock (breakpoints)
+					breakpoints.Remove (watch.BoundTracer);
 			}
 		}
 		
@@ -164,7 +167,7 @@ namespace MonoDevelop.Debugger
 					List<string> prios = new List<string> ();
 					int i = 0;
 					foreach (DebuggerEngineExtensionNode de in AddinManager.GetExtensionNodes (FactoriesPath)) {
-						if (de.Id.StartsWith ("Mono.Debugger.Soft")) // Give priority to soft debugger by default
+						if (de.Id.StartsWith ("Mono.Debugger.Soft", StringComparison.Ordinal)) // Give priority to soft debugger by default
 							prios.Insert (i++, de.Id);
 						else
 							prios.Add (de.Id);
@@ -182,19 +185,27 @@ namespace MonoDevelop.Debugger
 			}
 		}
 		
-		internal static IEnumerable<IValueVisualizer> GetValueVisualizers (ObjectValue val)
+		internal static IEnumerable<ValueVisualizer> GetValueVisualizers (ObjectValue val)
 		{
-			foreach (IValueVisualizer v in AddinManager.GetExtensionObjects ("/MonoDevelop/Debugging/ValueVisualizers", false))
-				if (v.CanVisualize (val))
-					yield return v;
+			foreach (object v in AddinManager.GetExtensionObjects ("/MonoDevelop/Debugging/ValueVisualizers", false)) {
+				if (v is ValueVisualizer) {
+					var vv = (ValueVisualizer)v;
+					if (vv.CanVisualize (val))
+						yield return vv;
+				}
+#pragma warning disable 618
+				if (v is IValueVisualizer) {
+					var vv = (IValueVisualizer)v;
+					if (vv.CanVisualize (val))
+						yield return new ValueVisualizerWrapper (vv);
+				}
+#pragma warning restore 618
+			}
 		}
 		
 		internal static bool HasValueVisualizers (ObjectValue val)
 		{
-			foreach (IValueVisualizer v in AddinManager.GetExtensionObjects ("/MonoDevelop/Debugging/ValueVisualizers", false))
-				if (v.CanVisualize (val))
-					return true;
-			return false;
+			return GetValueVisualizers (val).Any ();
 		}
 		
 		public static void ShowValueVisualizer (ObjectValue val)
@@ -220,7 +231,8 @@ namespace MonoDevelop.Debugger
 				bp.HitAction = HitAction.PrintExpression;
 				bp.TraceExpression = dlg.Text;
 				bp.ConditionExpression = dlg.Condition;
-				Breakpoints.Add (bp);
+				lock (breakpoints)
+					breakpoints.Add (bp);
 			}
 			dlg.Destroy ();
 		}
@@ -270,8 +282,8 @@ namespace MonoDevelop.Debugger
 			DebuggerEngine engine = GetFactoryForCommand (command);
 			if (engine != null)
 				return engine.SupportedFeatures;
-			else
-				return DebuggerFeatures.None;
+
+			return DebuggerFeatures.None;
 		}
 
 		public static void ShowExpressionEvaluator (string expression)
@@ -344,61 +356,66 @@ namespace MonoDevelop.Debugger
 			});
 
 		}
-		
+
+		static object cleanup_lock = new object ();
 		static void Cleanup ()
 		{
+			DebuggerSession currentSession;
+			StatusBarIcon currentIcon;
+			IConsole currentConsole;
+
+			lock (cleanup_lock) {
+				if (!IsDebugging)
+					return;
+
+				currentIcon = busyStatusIcon;
+				currentSession = session;
+				currentConsole = console;
+
+				currentBacktrace = null;
+				busyStatusIcon = null;
+				session = null;
+				console = null;
+			}
+
 			if (oldLayout != null) {
 				string layout = oldLayout;
 				oldLayout = null;
 				HideDebugCommandBar (layout);
 			}
-			
-			currentBacktrace = null;
-			
-			if (!IsDebugging)
-				return;
 
-			HideExceptionCaughtDialog ();
+			currentSession.BusyStateChanged -= OnBusyStateChanged;
+			currentSession.TargetEvent -= OnTargetEvent;
+			currentSession.TargetStarted -= OnStarted;
 
-			if (busyStatusIcon != null) {
-				busyStatusIcon.Dispose ();
-				busyStatusIcon = null;
+			currentSession.BreakpointTraceHandler = null;
+			currentSession.GetExpressionEvaluator = null;
+			currentSession.TypeResolverHandler = null;
+			currentSession.OutputWriter = null;
+			currentSession.LogWriter = null;
+			
+			if (currentConsole != null) {
+				currentConsole.CancelRequested -= OnCancelRequested;
+				currentConsole.Dispose ();
 			}
 			
-			session.TargetEvent -= OnTargetEvent;
-			session.TargetStarted -= OnStarted;
-			session.OutputWriter = null;
-			session.LogWriter = null;
-			session.BusyStateChanged -= OnBusyStateChanged;
-			session.TypeResolverHandler = null;
-			session.BreakpointTraceHandler = null;
-			session.GetExpressionEvaluator = null;
-			
-			// Dispose the session at the end, since it may take a while.
-			DebuggerSession oldSession = session;
-			session = null;
-			
 			DispatchService.GuiDispatch (delegate {
+				HideExceptionCaughtDialog ();
+
+				if (currentIcon != null) {
+					currentIcon.Dispose ();
+					currentIcon = null;
+				}
+
 				if (StoppedEvent != null)
 					StoppedEvent (null, new EventArgs ());
-			});
-			
-			if (console != null) {
-				console.CancelRequested -= OnCancelRequested;
-				console.Dispose ();
-				console = null;
-			}
-			
-			DispatchService.GuiDispatch (delegate {
+
 				NotifyCallStackChanged ();
 				NotifyCurrentFrameChanged ();
 				NotifyLocationChanged ();
 			});
-			
-			if (oldSession != null) {
-				oldSession.BusyStateChanged -= OnBusyStateChanged;
-				oldSession.Dispose ();
-			}
+
+			currentSession.Dispose ();
 		}
 
 		public static bool IsDebugging {
@@ -817,7 +834,7 @@ namespace MonoDevelop.Debugger
 		{
 			if (currentBacktrace != null) {
 				var sf = GetCurrentVisibleFrame ();
-				if (!string.IsNullOrEmpty (sf.SourceLocation.FileName) && System.IO.File.Exists (sf.SourceLocation.FileName) && sf.SourceLocation.Line != -1) {
+				if (sf != null && !string.IsNullOrEmpty (sf.SourceLocation.FileName) && System.IO.File.Exists (sf.SourceLocation.FileName) && sf.SourceLocation.Line != -1) {
 					Document document = IdeApp.Workbench.OpenDocument (sf.SourceLocation.FileName, sf.SourceLocation.Line, 1, OpenDocumentOptions.Debugger);
 					OnDisableConditionalCompilation (new DocumentEventArgs (document));
 				}
@@ -843,9 +860,9 @@ namespace MonoDevelop.Debugger
 					
 					//ensure that soft debugger is prioritised over newly installed debuggers
 					if (i1 < 0 )
-						i1 = d1.Id.StartsWith ("Mono.Debugger.Soft")? 0 : engs.Count;
+						i1 = d1.Id.StartsWith ("Mono.Debugger.Soft", StringComparison.Ordinal) ? 0 : engs.Count;
 					if (i2 < 0)
-						i2 = d2.Id.StartsWith ("Mono.Debugger.Soft")? 0 : engs.Count;
+						i2 = d2.Id.StartsWith ("Mono.Debugger.Soft", StringComparison.Ordinal) ? 0 : engs.Count;
 					
 					if (i1 == i2)
 						return d1.Name.CompareTo (d2.Name);
@@ -880,24 +897,26 @@ namespace MonoDevelop.Debugger
 		
 		static void OnLineCountChanged (object ob, LineCountEventArgs a)
 		{
-			foreach (Breakpoint bp in breakpoints.GetBreakpoints ()) {
-				if (bp.FileName == a.TextFile.Name) {
-					if (bp.Line > a.LineNumber) {
-						// If the line that has the breakpoint is deleted, delete the breakpoint, otherwise update the line #.
-						if (bp.Line + a.LineCount >= a.LineNumber)
-							breakpoints.UpdateBreakpointLine (bp, bp.Line + a.LineCount);
-						else
+			lock (breakpoints) {
+				foreach (Breakpoint bp in breakpoints.GetBreakpoints ()) {
+					if (bp.FileName == a.TextFile.Name) {
+						if (bp.Line > a.LineNumber) {
+							// If the line that has the breakpoint is deleted, delete the breakpoint, otherwise update the line #.
+							if (bp.Line + a.LineCount >= a.LineNumber)
+								breakpoints.UpdateBreakpointLine (bp, bp.Line + a.LineCount);
+							else
+								breakpoints.Remove (bp);
+						} else if (bp.Line == a.LineNumber && a.LineCount < 0)
 							breakpoints.Remove (bp);
 					}
-					else if (bp.Line == a.LineNumber && a.LineCount < 0)
-						breakpoints.Remove (bp);
 				}
 			}
 		}
 		
 		static void OnStoreUserPrefs (object s, UserPreferencesEventArgs args)
 		{
-			args.Properties.SetValue ("MonoDevelop.Ide.DebuggingService.Breakpoints", breakpoints.Save ());
+			lock (breakpoints)
+				args.Properties.SetValue ("MonoDevelop.Ide.DebuggingService.Breakpoints", breakpoints.Save ());
 			args.Properties.SetValue ("MonoDevelop.Ide.DebuggingService.PinnedWatches", pinnedWatches);
 		}
 		
@@ -906,17 +925,24 @@ namespace MonoDevelop.Debugger
 			XmlElement elem = args.Properties.GetValue<XmlElement> ("MonoDevelop.Ide.DebuggingService.Breakpoints");
 			if (elem == null)
 				elem = args.Properties.GetValue<XmlElement> ("MonoDevelop.Ide.DebuggingService");
-			if (elem != null)
-				breakpoints.Load (elem);
+
+			if (elem != null) {
+				lock (breakpoints)
+					breakpoints.Load (elem);
+			}
+
 			PinnedWatchStore wstore = args.Properties.GetValue<PinnedWatchStore> ("MonoDevelop.Ide.DebuggingService.PinnedWatches");
 			if (wstore != null)
 				pinnedWatches.LoadFrom (wstore);
-			pinnedWatches.BindAll (breakpoints);
+
+			lock (breakpoints)
+				pinnedWatches.BindAll (breakpoints);
 		}
 		
 		static void OnSolutionClosed (object s, EventArgs args)
 		{
-			breakpoints.Clear ();
+			lock (breakpoints)
+				breakpoints.Clear ();
 		}
 		
 		static string ResolveType (string identifier, SourceLocation location)

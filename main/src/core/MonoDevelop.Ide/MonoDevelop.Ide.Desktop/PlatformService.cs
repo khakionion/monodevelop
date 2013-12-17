@@ -28,6 +28,7 @@
 
 using System;
 using System.IO;
+using System.Linq;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -87,23 +88,31 @@ namespace MonoDevelop.Ide.Desktop
             LoggingService.LogWarning("Unable to open {0}", url);
 		}
 
+		/// <summary>
+		/// Loads the XWT toolkit backend for the native toolkit (Cocoa on Mac, WPF on Windows)
+		/// </summary>
+		/// <returns>The native toolkit.</returns>
+		public virtual Xwt.Toolkit LoadNativeToolkit ()
+		{
+			return Xwt.Toolkit.CurrentEngine;
+		}
+
 		public string GetMimeTypeForUri (string uri)
 		{
 			if (!String.IsNullOrEmpty (uri)) {
-// Creating file infos is expensive, should be avoided 
-//				FileInfo file = new FileInfo (uri);
-//				MimeTypeNode mt = FindMimeTypeForFile (file.Name);
 				MimeTypeNode mt = FindMimeTypeForFile (uri);
 				if (mt != null)
 					return mt.Id;
 			}
-			return OnGetMimeTypeForUri (uri) ?? "text/plain";
+			return OnGetMimeTypeForUri (uri) ?? "application/octet-stream";
 		}
-		
+
 		public string GetMimeTypeDescription (string mimeType)
 		{
 			if (mimeType == "text/plain")
 				return GettextCatalog.GetString ("Text file");
+			if (mimeType == "application/octet-stream")
+				return GettextCatalog.GetString ("Unknown");
 			MimeTypeNode mt = FindMimeType (mimeType);
 			if (mt != null && mt.Description != null)
 				return mt.Description;
@@ -128,14 +137,14 @@ namespace MonoDevelop.Ide.Desktop
 		{
 			yield return mimeType;
 			
-			while (mimeType != null && mimeType != "text/plain") {
+			while (mimeType != null && mimeType != "text/plain" && mimeType != "application/octet-stream") {
 				MimeTypeNode mt = FindMimeType (mimeType);
 				if (mt != null && !string.IsNullOrEmpty (mt.BaseType))
 					mimeType = mt.BaseType;
 				else {
-					if (mimeType.EndsWith ("+xml"))
+					if (mimeType.EndsWith ("+xml", StringComparison.Ordinal))
 						mimeType = "application/xml";
-					else if (mimeType.StartsWith ("text") || OnGetMimeTypeIsText (mimeType))
+					else if (mimeType.StartsWith ("text/", StringComparison.Ordinal) || OnGetMimeTypeIsText (mimeType))
 						mimeType = "text/plain";
 					else
 						break;
@@ -245,8 +254,8 @@ namespace MonoDevelop.Ide.Desktop
 					var mimeTypeNode = (MimeTypeNode)args.ExtensionNode;
 					switch (args.Change) {
 					case ExtensionChange.Add:
-							// initialize child nodes.
-						var initialize = mimeTypeNode.ChildNodes;
+						// initialize child nodes.
+						mimeTypeNode.ChildNodes.GetEnumerator ();
 						newList.Add (mimeTypeNode);
 						break;
 					case ExtensionChange.Remove:
@@ -275,7 +284,7 @@ namespace MonoDevelop.Ide.Desktop
 			}
 			return null;
 		}
-		
+
 		protected virtual string OnGetMimeTypeForUri (string uri)
 		{
 			return null;
@@ -419,6 +428,10 @@ namespace MonoDevelop.Ide.Desktop
 			window.Present ();
 		}
 
+		internal virtual void RemoveWindowShadow (Gtk.Window window)
+		{
+		}
+
 		internal virtual void SetMainWindowDecorations (Gtk.Window window)
 		{
 		}
@@ -426,6 +439,28 @@ namespace MonoDevelop.Ide.Desktop
 		internal virtual MainToolbar CreateMainToolbar (Gtk.Window window)
 		{
 			return new MainToolbar ();
+		}
+
+		public virtual bool GetIsFullscreen (Gtk.Window window)
+		{
+			return ((bool?) window.Data ["isFullScreen"]) ?? false;
+		}
+
+		public virtual bool IsModalDialogRunning ()
+		{
+			var windows = Gtk.Window.ListToplevels ();
+			return windows.Any (w => w.Modal && w.Visible);
+		}
+
+		public virtual void SetIsFullscreen (Gtk.Window window, bool isFullscreen)
+		{
+			window.Data ["isFullScreen"] = isFullscreen;
+			if (isFullscreen) {
+				window.Fullscreen ();
+			} else {
+				window.Unfullscreen ();
+				SetMainWindowDecorations (window);
+			}
 		}
 	}
 }

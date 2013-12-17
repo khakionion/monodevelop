@@ -139,6 +139,9 @@ namespace MonoDevelop.DesignerSupport.Toolbox
 		{
 			categories.Add (category);
 			foreach (Item item in category.Items) {
+				if (item.Icon == null)
+					continue;
+
 				this.iconSize.Width  = Math.Max (this.iconSize.Width,  item.Icon.Width);
 				this.iconSize.Height  = Math.Max (this.iconSize.Height,  item.Icon.Height);
 			}
@@ -231,7 +234,7 @@ namespace MonoDevelop.DesignerSupport.Toolbox
 				else
 					messageLayout.SetText (MonoDevelop.Core.GettextCatalog.GetString ("There are no tools available for the current document."));
 				cr.MoveTo (Allocation.Width * 1 / 6, 12);
-				cr.Color = Style.Text (StateType.Normal).ToCairoColor ();
+				cr.SetSourceColor (Style.Text (StateType.Normal).ToCairoColor ());
 				Pango.CairoHelper.ShowLayout (cr, messageLayout);
 				messageLayout.Dispose ();
 				((IDisposable)cr).Dispose ();
@@ -239,7 +242,7 @@ namespace MonoDevelop.DesignerSupport.Toolbox
 			}
 
 			var backColor = Style.Base (StateType.Normal).ToCairoColor ();
-			cr.Color = backColor;
+			cr.SetSourceColor (backColor);
 			cr.Rectangle (area.X, area.Y, area.Width, area.Height);
 			cr.Fill ();
 
@@ -258,7 +261,7 @@ namespace MonoDevelop.DesignerSupport.Toolbox
 				using (var pat = new Cairo.LinearGradient (xpos, ypos, xpos, ypos + itemDimension.Height)) {
 					pat.AddColorStop (0, CategoryBackgroundGradientStartColor);
 					pat.AddColorStop (1, CategoryBackgroundGradientEndColor);
-					cr.Pattern = pat;
+					cr.SetSource (pat);
 					cr.Fill ();
 				}
 				if (lastCategory == null || lastCategory.IsExpanded || lastCategory.AnimatingExpand) {
@@ -267,13 +270,13 @@ namespace MonoDevelop.DesignerSupport.Toolbox
 				}
 				cr.MoveTo (0, ypos + itemDimension.Height - 0.5);
 				cr.LineTo (xpos + Allocation.Width, ypos + itemDimension.Height - 0.5);
-				cr.Color = CategoryBorderColor;
+				cr.SetSourceColor (CategoryBorderColor);
 				cr.LineWidth = 1;
 				cr.Stroke ();
 
 				headerLayout.SetText (category.Text);
 				int width, height;
-				cr.Color = CategoryLabelColor;
+				cr.SetSourceColor (CategoryLabelColor);
 				layout.GetPixelSize (out width, out height);
 				cr.MoveTo (xpos + CategoryLeftPadding, ypos + (itemDimension.Height - height) / 2);
 				Pango.CairoHelper.ShowLayout (cr, headerLayout);
@@ -287,7 +290,7 @@ namespace MonoDevelop.DesignerSupport.Toolbox
 
 			}, delegate (Category curCategory, Item item, Gdk.Size itemDimension) {
 				if (item == SelectedItem) {
-					cr.Color = Style.Base (StateType.Selected).ToCairoColor ();
+					cr.SetSourceColor (Style.Base (StateType.Selected).ToCairoColor ());
 					cr.Rectangle (xpos, ypos, itemDimension.Width, itemDimension.Height);
 					cr.Fill ();
 				}
@@ -297,7 +300,7 @@ namespace MonoDevelop.DesignerSupport.Toolbox
 					layout.SetText (item.Text);
 					int width, height;
 					layout.GetPixelSize (out width, out height);
-					cr.Color = Style.Text (item != this.SelectedItem ? StateType.Normal : StateType.Selected).ToCairoColor ();
+					cr.SetSourceColor (Style.Text (item != this.SelectedItem ? StateType.Normal : StateType.Selected).ToCairoColor ());
 					cr.MoveTo (xpos + ItemLeftPadding + IconSize.Width + ItemIconTextItemSpacing, ypos + (itemDimension.Height - height) / 2);
 					Pango.CairoHelper.ShowLayout (cr, layout);
 				} else {
@@ -306,7 +309,7 @@ namespace MonoDevelop.DesignerSupport.Toolbox
 				}
 					
 				if (item == mouseOverItem) {
-					cr.Color = Style.Dark (StateType.Prelight).ToCairoColor ();
+					cr.SetSourceColor (Style.Dark (StateType.Prelight).ToCairoColor ());
 					cr.Rectangle (xpos + 0.5, ypos + 0.5, itemDimension.Width - 1, itemDimension.Height - 1);
 					cr.Stroke ();
 				}
@@ -318,7 +321,7 @@ namespace MonoDevelop.DesignerSupport.Toolbox
 				// Closing line when animating the last group of the toolbox
 				cr.MoveTo (area.X, ypos + 0.5);
 				cr.RelLineTo (area.Width, 0);
-				cr.Color = CategoryBorderColor;
+				cr.SetSourceColor (CategoryBorderColor);
 				cr.Stroke ();
 			}
 
@@ -341,7 +344,7 @@ namespace MonoDevelop.DesignerSupport.Toolbox
 
 				// Clear the area where the category will be drawn since it will be
 				// drawn over the items being hidden/shown
-				cr.Color = backColor;
+				cr.SetSourceColor (backColor);
 				cr.Rectangle (area.X, newypos, area.Width, ypos - lastCategoryYpos);
 				cr.Fill ();
 				ypos = newypos;
@@ -768,13 +771,17 @@ namespace MonoDevelop.DesignerSupport.Toolbox
 		protected override void OnSetScrollAdjustments (Adjustment hAdjustement, Adjustment vAdjustement)
 		{
 			this.hAdjustement = hAdjustement;
-			this.hAdjustement.ValueChanged += delegate {
-				this.QueueDraw ();
-			};
+			if (this.hAdjustement != null) {
+				this.hAdjustement.ValueChanged += delegate {
+					this.QueueDraw ();
+				};
+			}
 			this.vAdjustement = vAdjustement;
-			this.vAdjustement.ValueChanged += delegate {
-				this.QueueDraw ();
-			};
+			if (this.vAdjustement != null) {
+				this.vAdjustement.ValueChanged += delegate {
+					this.QueueDraw ();
+				};
+			}
 		}
 		#endregion
 		
@@ -1057,22 +1064,20 @@ namespace MonoDevelop.DesignerSupport.Toolbox
 		
 		public string Tooltip {
 			get {
+				if (node != null)
+					return string.IsNullOrEmpty (node.Description) ? node.Name : node.Description;
 				return tooltip;
-			}
-			set {
-				tooltip = value;
 			}
 		}
 		
 		public Gdk.Pixbuf Icon {
 			get {
+				if (node != null)
+					return node.Icon;
 				return icon ?? DefaultIcon;
 			}
-			set {
-				icon = value;
-			}
 		}
-		
+
 		static Gdk.Pixbuf DefaultIcon {
 			get {
 				if (defaultIcon == null) {
@@ -1087,10 +1092,9 @@ namespace MonoDevelop.DesignerSupport.Toolbox
 		
 		public string Text {
 			get {
+				if (node != null)
+					return node.Name;
 				return text;
-			}
-			set {
-				text = value;
 			}
 		}
 		
@@ -1105,13 +1109,17 @@ namespace MonoDevelop.DesignerSupport.Toolbox
 		
 		public object Tag {
 			get {
-				return tag;
-			}
-			set {
-				tag = value;
+				return node ?? tag;
 			}
 		}
+
+		ItemToolboxNode node;
+		public Item (ItemToolboxNode node)
+		{
+			this.node = node;
+		}
 		
+
 		public Item (string text) : this (null, text, null)
 		{
 		}

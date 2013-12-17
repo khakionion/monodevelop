@@ -1,6 +1,7 @@
 [submodule "main/external/cecil"]
 	path = main/external/cecil
 	url = git://github.com/mono/cecil.git
+	branch = mono-3.0
 [submodule "main/external/maccore"]
 	path = main/external/maccore
 	url = git://github.com/mono/maccore.git
@@ -31,3 +32,13 @@
 [submodule "main/external/ikvm"]
 	path = main/external/ikvm
 	url = git://github.com/mono/ikvm-fork.git
+[submodule "main/external/debugger-libs"]
+	path = main/external/debugger-libs
+	url = git://github.com/mono/debugger-libs.git
+[submodule "main/external/guiunit"]
+	path = main/external/guiunit
+	url = git://github.com/mono/guiunit.git
+[submodule "main/external/raygun4net"]
+	path = main/external/raygun4net
+	url = git://github.com/mono/raygun4net.git
+	branch = xshacks

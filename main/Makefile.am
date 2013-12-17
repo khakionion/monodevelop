@@ -32,7 +32,7 @@ vcrevision:
 
 $(buildinfo): vcrevision
 	@mkdir -p "$(top_builddir)/build/bin"
-	@echo "$$(cat $(top_srcdir)/vcrevision)" > "$@"
+	@echo "Git revision: $$(cat $(top_srcdir)/vcrevision)" > "$@"
 	@echo "Build date: $$(date -u +'%Y-%m-%d %H:%M:%S%z')" >> "$@"
 	@echo "Updated build information"
 	@cat $(buildinfo)
@@ -110,9 +110,11 @@ apidocs:
 	mdassembler --out docs/sources/monodevelop-extension-guide --addins docs/extension-model.xml
 #	cd docs/apiguide && mdassembler --out monodevelop-api-guide --xhtml toc.xhtml && mv monodevelop-api-guide.zip ../web/sources
 
-MD_LAUNCH=$(MD_LAUNCH_SETUP) UBUNTU_MENUPROXY=0 exec -a "monodevelop" $(RUNTIME)
+MD_LAUNCH=$(MD_LAUNCH_SETUP) UBUNTU_MENUPROXY=0 LIBOVERLAY_SCROLLBAR=0 exec -a "monodevelop" $(RUNTIME)
 
-run: runmd-sgen
+run: run-sgen
+
+run-boehm: runmd
 
 run-sgen: runmd-sgen
 
@@ -149,7 +151,7 @@ plot-trace:
 	python plot-timeline.py -o md-trace.png  md.strace
 
 run-profile-heap: $(PROGRAM)
-	$(MD_LAUNCH) -O=inline --profile=heap:heaplog $(MD_BIN_PATH)/MonoDevelop.exe --no-redirect
+	$(MD_LAUNCH) --profile=log:heapshot=900000ms $(MD_BIN_PATH)/MonoDevelop.exe --no-redirect
 
 check-addins:
 	$(MDTOOL_RUN) setup reg-build -v

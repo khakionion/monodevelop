@@ -33,6 +33,7 @@ using MonoDevelop.Refactoring;
 using MonoDevelop.Refactoring.Rename;
 using ICSharpCode.NRefactory.CSharp.Resolver;
 using ICSharpCode.NRefactory.Semantics;
+using Mono.TextEditor;
 
 namespace MonoDevelop.AnalysisCore.Fixes
 {
@@ -40,7 +41,7 @@ namespace MonoDevelop.AnalysisCore.Fixes
 	{
 		public string NewName { get; private set; }
 		public string OldName { get; private set; }
-		
+		public string IdString { get; set; }
 		public IEntity Item { get; private set; }
 		
 		public RenameMemberFix (IEntity item, string oldName, string newName)
@@ -112,7 +113,9 @@ namespace MonoDevelop.AnalysisCore.Fixes
 			public RenameRefactoring.RenameProperties Properties;
 			public bool Preview;
 			public string Label { get; set; }
-			
+			public DocumentRegion DocumentRegion { get; set; }
+			public string IdString { get; set; }
+
 			public void Fix ()
 			{
 				if (string.IsNullOrEmpty (Properties.NewName)) {
@@ -128,6 +131,17 @@ namespace MonoDevelop.AnalysisCore.Fixes
 					var monitor = IdeApp.Workbench.ProgressMonitors.GetBackgroundProgressMonitor ("Rename", null);
 					RefactoringService.AcceptChanges (monitor, changes);
 				}
+			}
+			
+			public bool SupportsBatchFix {
+				get {
+					return false;
+				}
+			}
+			
+			public void BatchFix ()
+			{
+				throw new InvalidOperationException ("Batch fixing is not supported");
 			}
 		}
 	}

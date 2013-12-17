@@ -32,6 +32,7 @@ using Gtk;
 using Gdk;
 using MonoDevelop.Ide;
 using MonoDevelop.Ide.Gui;
+using Mono.TextEditor;
 
 namespace MonoDevelop.Components
 {
@@ -221,10 +222,11 @@ namespace MonoDevelop.Components
 			using (var ctx = Gdk.CairoHelper.Create (GdkWindow)) {
 
 				ctx.Rectangle (0, 0, Allocation.Width, Allocation.Height);
-				Cairo.LinearGradient g = new Cairo.LinearGradient (0, 0, 0, Allocation.Height);
-				g.AddColorStop (0, Styles.BreadcrumbBackgroundColor);
-				g.AddColorStop (1, Styles.BreadcrumbGradientEndColor);
-				ctx.Pattern = g;
+				using (var g = new Cairo.LinearGradient (0, 0, 0, Allocation.Height)) {
+					g.AddColorStop (0, Styles.BreadcrumbBackgroundColor);
+					g.AddColorStop (1, Styles.BreadcrumbGradientEndColor);
+					ctx.SetSource (g);
+				}
 				ctx.Fill ();
 
 				if (widths == null)
@@ -288,7 +290,7 @@ namespace MonoDevelop.Components
 
 					if (showText) {
 						// Text
-						ctx.Color = Styles.BreadcrumbTextColor.ToCairoColor ();
+						ctx.SetSourceColor (Styles.BreadcrumbTextColor.ToCairoColor ());
 						ctx.MoveTo (x + textOffset, textTopPadding);
 						PangoCairoHelper.ShowLayout (ctx, layout);
 					}
@@ -347,7 +349,7 @@ namespace MonoDevelop.Components
 
 					if (showText) {
 						// Text
-						ctx.Color = Styles.BreadcrumbTextColor.ToCairoColor ();
+						ctx.SetSourceColor (Styles.BreadcrumbTextColor.ToCairoColor ());
 						ctx.MoveTo (x + textOffset, textTopPadding);
 						PangoCairoHelper.ShowLayout (ctx, layout);
 					}
@@ -357,7 +359,7 @@ namespace MonoDevelop.Components
 
 				ctx.MoveTo (0, Allocation.Height - 0.5);
 				ctx.RelLineTo (Allocation.Width, 0);
-				ctx.Color = Styles.BreadcrumbBottomBorderColor;
+				ctx.SetSourceColor (Styles.BreadcrumbBottomBorderColor);
 				ctx.LineWidth = 1;
 				ctx.Stroke ();
 			}
@@ -371,7 +373,7 @@ namespace MonoDevelop.Components
 			ctx.LineTo (x + arrowSize, y + size / 2);
 			ctx.LineTo (x, y + size);
 			ctx.ClosePath ();
-			ctx.Color = CairoExtensions.ColorShade (Style.Dark (State).ToCairoColor (), 0.6);
+			ctx.SetSourceColor (CairoExtensions.ColorShade (Style.Dark (State).ToCairoColor (), 0.6));
 			ctx.Fill ();
 		}
 
@@ -383,11 +385,11 @@ namespace MonoDevelop.Components
 			double height = Allocation.Height - topPadding - bottomPadding + buttonPadding * 2;
 
 			ctx.Rectangle (x, y, width, height);
-			ctx.Color = Styles.BreadcrumbButtonFillColor;
+			ctx.SetSourceColor (Styles.BreadcrumbButtonFillColor);
 			ctx.Fill ();
 
 			ctx.Rectangle (x + 0.5, y + 0.5, width - 1, height - 1);
-			ctx.Color = Styles.BreadcrumbButtonBorderColor;
+			ctx.SetSourceColor (Styles.BreadcrumbButtonBorderColor);
 			ctx.LineWidth = 1;
 			ctx.Stroke ();
 		}

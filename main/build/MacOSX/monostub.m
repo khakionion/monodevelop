@@ -20,6 +20,8 @@ typedef int (* mono_main) (int argc, char **argv);
 typedef void (* mono_free) (void *ptr);
 typedef char * (* mono_get_runtime_build_info) (void);
 
+void *libmono;
+
 static void
 exit_with_message (char *reason, char *argv0)
 {
@@ -267,7 +269,8 @@ update_environment (const char *macosDir, const char *app)
 	char *variable;
 	char buf[32];
 	
-	push_env ("DYLD_FALLBACK_LIBRARY_PATH", "/Library/Frameworks/Mono.framework/Versions/Current/lib:/lib:/usr/lib");
+    /* CommandLineTools are needed for OSX 10.9+ */
+	push_env ("DYLD_FALLBACK_LIBRARY_PATH", "/Library/Frameworks/Mono.framework/Versions/Current/lib:/lib:/usr/lib:/Library/Developer/CommandLineTools/usr/lib");
 	
 	/* Mono "External" directory */
 	push_env ("PKG_CONFIG_PATH", "/Library/Frameworks/Mono.framework/External/pkgconfig");
@@ -357,7 +360,7 @@ int main (int argc, char **argv)
 	NSString *binDir = [[NSString alloc] initWithUTF8String: "Contents/MacOS/lib/monodevelop/bin"];
 	NSString *appDir = [[NSBundle mainBundle] bundlePath];
 	// can be overridden with plist string MonoMinVersion
-	NSString *req_mono_version = @"2.10.10";
+	NSString *req_mono_version = @"3.0.7";
 	// can be overridden with either plist bool MonoUseSGen or MONODEVELOP_USE_SGEN env
 	bool use_sgen = YES;
 
@@ -401,7 +404,7 @@ int main (int argc, char **argv)
 	// allow the MONODEVELOP_USE_SGEN environment variable to override the plist value
 	use_sgen = env2bool ("MONODEVELOP_USE_SGEN", use_sgen);
 	
-	void *libmono = dlopen (use_sgen ? MONO_LIB_PATH ("libmonosgen-2.0.dylib") : MONO_LIB_PATH ("libmono-2.0.dylib"), RTLD_LAZY);
+	libmono = dlopen (use_sgen ? MONO_LIB_PATH ("libmonosgen-2.0.dylib") : MONO_LIB_PATH ("libmono-2.0.dylib"), RTLD_LAZY);
 	
 	if (libmono == NULL) {
 		fprintf (stderr, "Failed to load libmono%s-2.0.dylib: %s\n", use_sgen ? "sgen" : "", dlerror ());

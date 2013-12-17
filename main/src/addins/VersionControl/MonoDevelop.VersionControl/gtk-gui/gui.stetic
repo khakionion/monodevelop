@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <stetic-interface>
   <configuration>
     <images-root-path>..</images-root-path>
@@ -759,7 +759,6 @@
                 <property name="CanFocus">True</property>
                 <property name="Upper">99999</property>
                 <property name="PageIncrement">10</property>
-                <property name="PageSize">10</property>
                 <property name="StepIncrement">1</property>
                 <property name="ClimbRate">1</property>
                 <property name="Numeric">True</property>
@@ -1005,6 +1004,7 @@
             <property name="IsEditable">True</property>
             <property name="InvisibleChar">●</property>
             <signal name="Changed" handler="OnRepositoryUrlEntryChanged" />
+            <signal name="ClipboardPasted" handler="OnRepositoryUrlEntryClipboardPasted" />
           </widget>
           <packing>
             <property name="LeftAttach">1</property>
@@ -1088,12 +1088,54 @@
                   <widget class="Gtk.TreeView" id="fileList">
                     <property name="MemberName">fileList</property>
                     <property name="CanFocus">True</property>
+                    <property name="SearchColumn">2</property>
                   </widget>
                 </child>
               </widget>
               <packing>
                 <property name="Position">1</property>
                 <property name="AutoSize">True</property>
+              </packing>
+            </child>
+            <child>
+              <widget class="Gtk.HBox" id="hbox1">
+                <property name="MemberName" />
+                <property name="Spacing">6</property>
+                <child>
+                  <widget class="Gtk.Label" id="label2">
+                    <property name="MemberName" />
+                    <property name="Xalign">0</property>
+                    <property name="LabelProp" translatable="yes">Commit _message:</property>
+                    <property name="UseUnderline">True</property>
+                    <property name="MnemonicWidget">textview</property>
+                  </widget>
+                  <packing>
+                    <property name="Position">0</property>
+                    <property name="AutoSize">True</property>
+                    <property name="Expand">False</property>
+                    <property name="Fill">False</property>
+                  </packing>
+                </child>
+                <child>
+                  <widget class="Gtk.Label" id="label3">
+                    <property name="MemberName" />
+                    <property name="LabelProp" translatable="yes">?/?</property>
+                    <property name="MnemonicWidget">textview</property>
+                  </widget>
+                  <packing>
+                    <property name="PackType">End</property>
+                    <property name="Position">1</property>
+                    <property name="AutoSize">True</property>
+                    <property name="Expand">False</property>
+                    <property name="Fill">False</property>
+                  </packing>
+                </child>
+              </widget>
+              <packing>
+                <property name="Position">2</property>
+                <property name="AutoSize">True</property>
+                <property name="Expand">False</property>
+                <property name="Fill">False</property>
               </packing>
             </child>
             <child>
@@ -1137,8 +1179,6 @@
                 <property name="PackType">End</property>
                 <property name="Position">3</property>
                 <property name="AutoSize">True</property>
-                <property name="Expand">False</property>
-                <property name="Fill">False</property>
               </packing>
             </child>
           </widget>
@@ -1178,8 +1218,7 @@
             <property name="MemberName" />
             <property name="CanDefault">True</property>
             <property name="CanFocus">True</property>
-            <property name="Type">TextAndIcon</property>
-            <property name="Icon">stock:vc-commit Menu</property>
+            <property name="Type">TextOnly</property>
             <property name="Label" translatable="yes">C_ommit</property>
             <property name="UseUnderline">True</property>
             <property name="ResponseId">-1</property>

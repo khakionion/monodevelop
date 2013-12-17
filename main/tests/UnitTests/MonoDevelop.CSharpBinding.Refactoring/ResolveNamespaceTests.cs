@@ -36,21 +36,34 @@ using MonoDevelop.CSharp;
 using MonoDevelop.CSharp.Completion;
 using MonoDevelop.Refactoring;
 using System.Linq;
+using MonoDevelop.Projects;
+using MonoDevelop.Ide.TypeSystem;
 
 namespace MonoDevelop.CSharpBinding.Refactoring
 {
-	[TestFixture()]
+	[TestFixture]
 	public class ResolveNamespaceTests : UnitTests.TestBase
 	{
 		static Document Setup (string input)
 		{
-			TestWorkbenchWindow tww = new TestWorkbenchWindow ();
+			var tww = new TestWorkbenchWindow ();
 			var content = new TestViewContent ();
+
+			var project = new DotNetAssemblyProject ("C#");
+			project.Name = "test";
+			project.References.Add (new ProjectReference (ReferenceType.Package, "System, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"));
+			project.References.Add (new ProjectReference (ReferenceType.Package, "System.Core"));
+
+			project.FileName = "test.csproj";
+
+			TypeSystemService.LoadProject (project);
+			TypeSystemService.GetProjectContentWrapper (project).ReconnectAssemblyReferences (); 
+			content.Project = project;
+
 			tww.ViewContent = content;
 			content.ContentName = "a.cs";
 			content.GetTextEditorData ().Document.MimeType = "text/x-csharp";
-			Mono.TextEditor.ClipboardActions.CopyOperation cp;
-			Document doc = new Document (tww);
+			var doc = new Document (tww);
 
 			var text = input;
 			int endPos = text.IndexOf ('$');
@@ -58,17 +71,16 @@ namespace MonoDevelop.CSharpBinding.Refactoring
 				text = text.Substring (0, endPos) + text.Substring (endPos + 1);
 
 			content.Text = text;
-			content.CursorPosition = System.Math.Max (0, endPos);
+			content.CursorPosition = Math.Max (0, endPos);
 
 			var compExt = new CSharpCompletionTextEditorExtension ();
 			compExt.Initialize (doc);
 			content.Contents.Add (compExt);
-
 			doc.UpdateParseDocument ();
 			return doc;
 		}
 
-		HashSet<Tuple<string, bool>> GetResult (string input)
+		HashSet<MonoDevelop.Refactoring.ResolveCommandHandler.PossibleNamespace> GetResult (string input)
 		{
 			var doc = Setup (input);
 			var location = doc.Editor.Caret.Location;
@@ -78,7 +90,7 @@ namespace MonoDevelop.CSharpBinding.Refactoring
 			return ResolveCommandHandler.GetPossibleNamespaces (doc, node, ref resolveResult);
 		}
 
-		[Test ()]
+		[Test]
 		public void TestObjectCreationType ()
 		{
 			var result = GetResult (@"class Test {
@@ -87,10 +99,10 @@ namespace MonoDevelop.CSharpBinding.Refactoring
 		var list = new $List<string> ();
 	}
 }");
-			Assert.IsTrue (result.Any (t => t.Item1 == "System.Collections.Generic"));
+			Assert.IsTrue (result.Any (t => t.Namespace == "System.Collections.Generic"));
 		}
 
-		[Test ()]
+		[Test]
 		public void TestLocalVariableType ()
 		{
 			var result = GetResult (@"class Test {
@@ -99,10 +111,10 @@ namespace MonoDevelop.CSharpBinding.Refactoring
 		$List<string> list;
 	}
 }");
-				Assert.IsTrue (result.Any (t => t.Item1 == "System.Collections.Generic"));
+			Assert.IsTrue (result.Any (t => t.Namespace == "System.Collections.Generic"));
 		}
 
-		[Test ()]
+		[Test]
 		public void TestParameterType ()
 		{
 			var result = GetResult (@"class Test {
@@ -110,28 +122,28 @@ namespace MonoDevelop.CSharpBinding.Refactoring
 	{
 	}
 }");
-			Assert.IsTrue (result.Any (t => t.Item1 == "System.Collections.Generic"));
+			Assert.IsTrue (result.Any (t => t.Namespace == "System.Collections.Generic"));
 		}
 		
-		[Test ()]
+		[Test]
 		public void TestFieldType ()
 		{
 			var result = GetResult (@"class Test {
 	$List<string> list;
 }");
-			Assert.IsTrue (result.Any (t => t.Item1 == "System.Collections.Generic"));
+			Assert.IsTrue (result.Any (t => t.Namespace == "System.Collections.Generic"));
 		}
 		
 		
-		[Test ()]
+		[Test]
 		public void TestBaseType ()
 		{
 			var result = GetResult (@"class Test : $List<string> {}");
-			Assert.IsTrue (result.Any (t => t.Item1 == "System.Collections.Generic"));
+			Assert.IsTrue (result.Any (t => t.Namespace == "System.Collections.Generic"));
 		}
 		
 
-		[Test ()]
+		[Test]
 		public void TestLocalVariableValid ()
 		{
 			var result = GetResult (@"using System.Collections.Generic;
@@ -144,17 +156,17 @@ class Test {
 			Assert.AreEqual (0, result.Count);
 		}
 
-		[Test ()]
+		[Test]
 		public void TestAttributeCase1 ()
 		{
 			var result = GetResult (@"
 [$Obsolete]
 class Test {
 }");
-			Assert.IsTrue (result.Any (t => t.Item1 == "System"));
+			Assert.IsTrue (result.Any (t => t.Namespace == "System"));
 		}
 		
-		[Test ()]
+		[Test]
 		public void TestAttributeCase2 ()
 		{
 
@@ -162,10 +174,10 @@ class Test {
 [$SerializableAttribute]
 class Test {
 }");
-			Assert.IsTrue (result.Any (t => t.Item1 == "System"));
+			Assert.IsTrue (result.Any (t => t.Namespace == "System"));
 		}
 
-		[Test ()]
+		[Test]
 		public void TestAmbigiousResolveResult ()
 		{
 
@@ -187,11 +199,11 @@ namespace My
 }");
 			foreach (var a in result)
 				Console.WriteLine (a);
-			Assert.IsTrue (result.Any (t => t.Item1 == "Foo"));
-			Assert.IsTrue (result.Any (t => t.Item1 == "Foo2"));
+			Assert.IsTrue (result.Any (t => t.Namespace == "Foo"));
+			Assert.IsTrue (result.Any (t => t.Namespace == "Foo2"));
 		}
 
-		[Test ()]
+		[Test]
 		public void TestExtensionMethod ()
 		{
 			var result = GetResult (@"class Program
@@ -203,12 +215,12 @@ namespace My
 }");
 			foreach (var a in result)
 				Console.WriteLine (a);
-			Assert.IsTrue (result.Any (t => t.Item1 == "System.Linq"));
+			Assert.IsTrue (result.Any (t => t.Namespace == "System.Linq"));
 		}
 
 
 		#region Bug 3453 - [New Resolver] "Resolve" doesn't show up from time
-		[Test ()]
+		[Test]
 		public void TestBug3453Case1 ()
 		{
 			var result = GetResult (@"class Test {
@@ -218,10 +230,10 @@ namespace My
 		return encoding.EncodingName;
 	}
 }");
-			Assert.IsTrue (result.Any (t => t.Item1 == "System.Text"));
+			Assert.IsTrue (result.Any (t => t.Namespace == "System.Text"));
 		}
 
-		[Test ()]
+		[Test]
 		public void TestBug3453Case2 ()
 		{
 			var result = GetResult (@"class Test {
@@ -231,10 +243,10 @@ namespace My
 		return encoding.EncodingName;
 	}
 }");
-			Assert.IsTrue (result.Any (t => t.Item1 == "System.Text"));
+			Assert.IsTrue (result.Any (t => t.Namespace == "System.Text"));
 		}
 
-		[Test ()]
+		[Test]
 		public void TestBug3453Case3 ()
 		{
 			var result = GetResult (@"class Test {
@@ -243,10 +255,10 @@ namespace My
 		$Encoding.
 	}
 }");
-			Assert.IsTrue (result.Any (t => t.Item1 == "System.Text"));
+			Assert.IsTrue (result.Any (t => t.Namespace == "System.Text"));
 		}
 
-		[Test ()]
+		[Test]
 		public void TestBug3453Case3WithGeneris ()
 		{
 			var result = GetResult (@"class Test {
@@ -255,14 +267,14 @@ namespace My
 		$List<string>.
 	}
 }");
-			Assert.IsTrue (result.Any (t => t.Item1 == "System.Collections.Generic"));
+			Assert.IsTrue (result.Any (t => t.Namespace == "System.Collections.Generic"));
 		}
 		#endregion
 
 		/// <summary>
 		/// Bug 4361 - Cannot 'resolve' an unknown type
 		/// </summary>
-		[Test ()]
+		[Test]
 		public void TestBug4361 ()
 		{
 			var result = GetResult (@"using System;
@@ -281,10 +293,10 @@ namespace sadfhgjhkfj
 }");
 			foreach (var a in result)
 				Console.WriteLine (a);
-			Assert.IsTrue (result.Any (t => t.Item1 == "System.Threading"));
+			Assert.IsTrue (result.Any (t => t.Namespace == "System.Threading"));
 		}
 
-		[Test ()]
+		[Test]
 		public void TestBug4361Case2 ()
 		{
 			var result = GetResult (@"using System;
@@ -301,15 +313,13 @@ namespace sadfhgjhkfj
         }
     }
 }");
-			foreach (var a in result)
-				Console.WriteLine (a);
-			Assert.IsTrue (result.Any (t => t.Item1 == "System.Threading"));
+			Assert.IsTrue (result.Any (t => t.Namespace == "System.Threading"));
 		}
 
 		/// <summary>
 		/// Bug 4493 - 'Resolve' context action offers incorrect options
 		/// </summary>
-		[Test ()]
+		[Test]
 		public void TestBug4493 ()
 		{
 			var result = GetResult (@"using System;
@@ -326,15 +336,15 @@ namespace sadfhgjhkfj
 }"
 			);
 
-			Assert.IsFalse (result.Any (t => t.Item1 == "System.Collections"));
-			Assert.IsTrue (result.Any (t => t.Item1 == "System.Collections.Generic"));
+			Assert.IsFalse (result.Any (t => t.Namespace == "System.Collections"));
+			Assert.IsTrue (result.Any (t => t.Namespace == "System.Collections.Generic"));
 		}
 
 
 		/// <summary>
 		/// Bug 5206 - Resolve -> Add Using statement does not work after "|" 
 		/// </summary>
-		[Test ()]
+		[Test]
 		public void TestBug5206 ()
 		{
 			var result = GetResult (@"using System;
@@ -351,13 +361,13 @@ namespace TestConsole
 }"
 			);
 
-			Assert.IsTrue (result.Any (t => t.Item1 == "System.Reflection"));
+			Assert.IsTrue (result.Any (t => t.Namespace == "System.Reflection"));
 		}
 
 		/// <summary>
 		/// Bug 4749 - Resolve is incorrect for inner classes
 		/// </summary>
-		[Test ()]
+		[Test]
 		public void TestBug4749 ()
 		{
 
@@ -373,8 +383,29 @@ class Program
 ");
 			foreach (var a in result)
 				Console.WriteLine (a);
-			Assert.IsTrue (result.Any (t => t.Item1 == "Test.Foo" && !t.Item2));
+			Assert.IsTrue (result.Any (t => t.Namespace == "Test.Foo" && !t.IsAccessibleWithGlobalUsing));
 		}
+
+
+		/// <summary>
+		/// Bug 10059 - Resolve type fails for nested static types
+		/// </summary>
+		[Test]
+		public void TestBug10059 ()
+		{
+			var result = GetResult (@"namespace ConsoleTest
+{
+    class MainClass
+    {
+        $Environment.SpecialFolder F { get; }
+    }
+}
+"
+			                        );
+			
+			Assert.IsTrue (result.Any (t => t.Namespace == "System"));
+		}
+
 
 	}
 }

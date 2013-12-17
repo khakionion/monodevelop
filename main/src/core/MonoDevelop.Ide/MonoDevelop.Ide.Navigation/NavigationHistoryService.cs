@@ -40,7 +40,8 @@ namespace MonoDevelop.Ide.Navigation
 	public static class NavigationHistoryService
 	{
 		static HistoryList history = new HistoryList ();
-		
+		static Stack<Tuple<NavigationPoint, int>> closedHistory = new Stack<Tuple<NavigationPoint, int>> ();
+
 		//used to prevent re-logging the current point during a switch
 		static bool switching;
 		
@@ -59,7 +60,16 @@ namespace MonoDevelop.Ide.Navigation
 				history.Clear ();
 				OnHistoryChanged ();
 			};
-			
+
+			IdeApp.Workbench.DocumentClosing += delegate(object sender, DocumentEventArgs e) {
+				NavigationPoint point = GetNavPointForDoc (e.Document);
+				if (point == null)
+					return;
+
+				closedHistory.Push (new Tuple<NavigationPoint, int> (point, IdeApp.Workbench.Documents.IndexOf (e.Document)));
+				OnClosedHistoryChanged ();
+			};
+
 			//keep nav points up to date
 			TextEditorService.LineCountChanged += LineCountChanged;
 			TextEditorService.LineCountChangesCommitted += CommitCountChanges;
@@ -203,6 +213,22 @@ namespace MonoDevelop.Ide.Navigation
 		}
 		
 		#endregion
+
+		#region Closed Document List
+
+		public static bool HasClosedDocuments {
+			get { return closedHistory.Count != 0; }
+		}
+
+		public static void OpenLastClosedDocument () {
+			if (HasClosedDocuments) {
+				var tuple = closedHistory.Pop ();
+				var doc = tuple.Item1.ShowDocument ();
+				IdeApp.Workbench.ReorderTab (IdeApp.Workbench.Documents.IndexOf (doc), tuple.Item2);
+			}
+		}
+
+		#endregion
 		
 		public static IList<NavigationHistoryItem> GetNavigationList (int desiredLength)
 		{
@@ -228,11 +254,18 @@ namespace MonoDevelop.Ide.Navigation
 		}
 		
 		public static event EventHandler HistoryChanged;
+		public static event EventHandler ClosedHistoryChanged;
 		
 		static void OnHistoryChanged ()
 		{
 			if (HistoryChanged != null)
 				HistoryChanged (null, EventArgs.Empty);
+		}
+
+		static void OnClosedHistoryChanged ()
+		{
+			if (ClosedHistoryChanged != null)
+				ClosedHistoryChanged (null, EventArgs.Empty);
 		}
 		
 		#region Handling active doc change events
@@ -310,16 +343,22 @@ namespace MonoDevelop.Ide.Navigation
 		
 		static void FileRenamed (object sender, ProjectFileRenamedEventArgs e)
 		{
-			bool changed = false;
+			bool historyChanged = false;
+			bool closedHistoryChanged = false;
 			foreach (ProjectFileRenamedEventInfo args in e) {
 				foreach (NavigationHistoryItem point in history) {
 					DocumentNavigationPoint dp = point.NavigationPoint as DocumentNavigationPoint;
-					if (dp != null && dp.HandleRenameEvent(args.OldName, args.NewName))
-						changed = true;
+					historyChanged &= (dp != null && dp.HandleRenameEvent (args.OldName, args.NewName));
+				}
+				foreach (NavigationHistoryItem point in history) {
+					DocumentNavigationPoint cdp = point.NavigationPoint as DocumentNavigationPoint;
+					closedHistoryChanged &= (cdp != null && cdp.HandleRenameEvent (args.OldName, args.NewName));
 				}
 			}
-			if (changed)
+			if (historyChanged)
 				OnHistoryChanged ();
+			if (closedHistoryChanged)
+				OnClosedHistoryChanged ();
 		}
 
 		static void FileRemoved (object sender, ProjectFileEventArgs e)

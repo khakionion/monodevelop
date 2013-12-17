@@ -34,6 +34,7 @@ using Mono.TextEditor;
 using System.Linq;
 using MonoDevelop.SourceEditor.QuickTasks;
 using ICSharpCode.NRefactory.CSharp;
+using ICSharpCode.NRefactory.Refactoring;
 
 namespace MonoDevelop.AnalysisCore.Gui
 {
@@ -56,13 +57,16 @@ namespace MonoDevelop.AnalysisCore.Gui
 		
 		public override void Dispose ()
 		{
-			if (!disposed) {
-				AnalysisOptions.AnalysisEnabled.Changed -= AnalysisOptionsChanged;
-				CancelTask ();
-				disposed = true;
-			}
-			markers.Clear ();
-			base.Dispose ();
+			if (disposed) 
+				return;
+			enabled = false;
+			Document.DocumentParsed -= OnDocumentParsed;
+			CancelTask ();
+			AnalysisOptions.AnalysisEnabled.Changed -= AnalysisOptionsChanged;
+			while (markers.Count > 0)
+				Document.Editor.Document.RemoveMarker (markers.Dequeue ());
+			tasks.Clear ();
+			disposed = true;
 		}
 		
 		bool enabled;
@@ -122,18 +126,13 @@ namespace MonoDevelop.AnalysisCore.Gui
 			if (Document == null || Document.ParsedDocument == null)
 				return;
 			var doc = Document.ParsedDocument;
-			if (src != null) {
-				src.Cancel ();
-				try {
-					oldTask.Wait ();
-				} catch (AggregateException ex) {
-					ex.Handle (e => e is TaskCanceledException);
-				}
+			lock (this) {
+				CancelTask ();
+				src = new CancellationTokenSource ();
+				var treeType = new RuleTreeType ("Document", Path.GetExtension (doc.FileName));
+				var task = AnalysisService.QueueAnalysis (Document, treeType, src.Token);
+				oldTask = task.ContinueWith (t => new ResultsUpdater (this, t.Result, src.Token).Update (), src.Token);
 			}
-			src = new CancellationTokenSource ();
-			var treeType = new RuleTreeType ("Document", Path.GetExtension (doc.FileName));
-			var task = AnalysisService.QueueAnalysis (Document, treeType, src.Token);
-			oldTask = task.ContinueWith (t => new ResultsUpdater (this, t.Result, src.Token).Update (), src.Token);
 		}
 		
 		class ResultsUpdater 
@@ -194,7 +193,8 @@ namespace MonoDevelop.AnalysisCore.Gui
 					if (currentResult.InspectionMark != IssueMarker.None) {
 						int start = editor.LocationToOffset (currentResult.Region.Begin);
 						int end = editor.LocationToOffset (currentResult.Region.End);
-
+						if (start >= end)
+							continue;
 						if (currentResult.InspectionMark == IssueMarker.GrayOut) {
 							var marker = new GrayOutMarker (currentResult, TextSegment.FromBounds (start, end));
 							marker.IsVisible = currentResult.Underline;

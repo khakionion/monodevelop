@@ -28,7 +28,6 @@ using System;
 using MonoDevelop.Components.Commands;
 using MonoDevelop.Ide;
 using MonoDevelop.Projects;
-using MonoDevelop.Core;
 using System.Linq;
 using MonoDevelop.Ide.ProgressMonitoring;
 using System.Threading;
@@ -56,8 +55,7 @@ namespace MonoDevelop.VersionControl.Git
 					wob = IdeApp.ProjectOperations.CurrentSelectedWorkspaceItem;
 				if (wob != null)
 					return VersionControlService.GetRepository (wob) as GitRepository;
-				else
-					return null;
+				return null;
 			}
 		}
 		

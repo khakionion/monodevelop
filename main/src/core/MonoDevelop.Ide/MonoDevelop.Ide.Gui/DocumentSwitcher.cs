@@ -177,7 +177,7 @@ namespace MonoDevelop.Ide
 					yPos = padding;
 					cr.MoveTo (xPos, yPos);
 					layout.SetMarkup ("<b>" + cat.Title + "</b>");
-					cr.Color = (HslColor)Style.Text (StateType.Normal);
+					cr.SetSourceColor ((HslColor)Style.Text (StateType.Normal));
 					cr.ShowLayout (layout);
 					
 					if (cat.Items.Count == 0)
@@ -228,22 +228,22 @@ namespace MonoDevelop.Ide
 							int itemWidth = w + item.Icon.Width + 2 + itemPadding * 2;
 							cr.Rectangle (xPos, yPos, itemWidth, iconHeight);
 							cr.LineWidth = 1;
-							cr.Color = (HslColor)Style.Base (StateType.Selected);
+							cr.SetSourceColor ((HslColor)Style.Base (StateType.Selected));
 							cr.Fill ();
 						} else if (item == hoverItem) {
 							int itemWidth = w + item.Icon.Width + 2 + itemPadding * 2;
 							cr.Rectangle (xPos + 0.5, yPos + 0.5, itemWidth - 1, iconHeight);
 							cr.LineWidth = 1;
-							cr.Color = (HslColor)Style.Base (StateType.Selected);
+							cr.SetSourceColor ((HslColor)Style.Base (StateType.Selected));
 							cr.Stroke ();
 						}
-						cr.Color = (HslColor)Style.Text (item == ActiveItem? StateType.Selected : StateType.Normal);
+						cr.SetSourceColor ((HslColor)Style.Text (item == ActiveItem? StateType.Selected : StateType.Normal));
 						cr.MoveTo (xPos + item.Icon.Width + 2 + itemPadding, yPos + (iconHeight - h) / 2);
 						layout.SetText (Ellipsize (item.ListTitle ?? item.Title, maxLength));
 						cr.ShowLayout (layout);
-						e.Window.DrawPixbuf (Style.BaseGC (StateType.Normal), item.Icon, 0, 0, (int)xPos + itemPadding,
-							(int)(yPos + (iconHeight - item.Icon.Height) / 2), item.Icon.Width, item.Icon.Height, RgbDither.None, 0, 0);
-						
+						Gdk.CairoHelper.SetSourcePixbuf (cr, item.Icon, (int)xPos + itemPadding,
+						                                 (int)(yPos + (iconHeight - item.Icon.Height) / 2));
+						cr.Paint ();
 						yPos += iconHeight;
 						if (++curItem >= maxItems) {
 							curItem = 0;
@@ -270,15 +270,19 @@ namespace MonoDevelop.Ide
 			
 			switch (accels [0].Key) {
 			case Gdk.Key.Left:
+			case Gdk.Key.KP_Left:
 				LeftItem ();
 				break;
 			case Gdk.Key.Right:
+			case Gdk.Key.KP_Right:
 				RightItem ();
 				break;
 			case Gdk.Key.Up:
+			case Gdk.Key.KP_Up:
 				PrevItem (false);
 				break;
 			case Gdk.Key.Down:
+			case Gdk.Key.KP_Down:
 				NextItem (false);
 				break;
 			case Gdk.Key.Tab:

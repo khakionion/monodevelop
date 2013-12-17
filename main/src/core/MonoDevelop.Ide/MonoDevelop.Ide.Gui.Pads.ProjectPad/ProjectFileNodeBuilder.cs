@@ -167,7 +167,7 @@ namespace MonoDevelop.Ide.Gui.Pads.ProjectPad
 			try {
 				if (file.Project != null)
 					newProjectFile = file.Project.Files.GetFileWithVirtualPath (newPath.ToRelative (file.Project.BaseDirectory));
-				
+
 				if (!FileService.IsValidPath (newPath)) {
 					MessageService.ShowWarning (GettextCatalog.GetString ("The name you have chosen contains illegal characters. Please choose a different name."));
 				} else if (newProjectFile != null && newProjectFile != file) {
@@ -193,7 +193,7 @@ namespace MonoDevelop.Ide.Gui.Pads.ProjectPad
 		public override void ActivateItem ()
 		{
 			ProjectFile file = (ProjectFile) CurrentNode.DataItem;
-			IdeApp.Workbench.OpenDocument (file.FilePath);
+			IdeApp.Workbench.OpenDocument (file.FilePath, file.Project);
 		}
 		
 		public override void ActivateMultipleItems ()
@@ -202,7 +202,7 @@ namespace MonoDevelop.Ide.Gui.Pads.ProjectPad
 			for (int i = 0; i < CurrentNodes.Length; i++) {
 				// Only bring the last file to the front
 				file = (ProjectFile) CurrentNodes [i].DataItem;
-				IdeApp.Workbench.OpenDocument (file.FilePath, i == CurrentNodes.Length - 1);
+				IdeApp.Workbench.OpenDocument (file.FilePath, file.Project, i == CurrentNodes.Length - 1);
 			}
 		}
 		

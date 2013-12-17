@@ -1,5 +1,4 @@
 
-using System;
 using MonoDevelop.Components.Commands;
 using MonoDevelop.Projects;
 using MonoDevelop.Ide;
@@ -19,36 +18,39 @@ namespace MonoDevelop.VersionControl
 		Publish,
 		Checkout,
 		Repository,
-		Commit,
 		Revert,
 		Lock,
 		Unlock,
 		Annotate,
 		ShowAnnotations,
 		HideAnnotations,
-		CreatePatch
+		CreatePatch,
+		Ignore,
+		Unignore,
+		ResolveConflicts
 	}
 	
-	class SolutionVersionControlCommandHalder: CommandHandler
+	class SolutionVersionControlCommandHandler: CommandHandler
 	{
-		VersionControlItemList GetItems ()
+		static VersionControlItemList GetItems ()
 		{
 			VersionControlItemList list = new VersionControlItemList ();
 			
-			IWorkspaceObject wob;
+			WorkspaceItem wob;
+			SolutionItem sol;
 			Repository repo = null;
 			wob = IdeApp.ProjectOperations.CurrentSelectedWorkspaceItem;
 			if (wob != null)
 				repo = VersionControlService.GetRepository (wob);
 			if (repo == null) {
-				wob = IdeApp.ProjectOperations.CurrentSelectedSolutionItem;
-				if (wob != null)
-					repo = VersionControlService.GetRepository (wob);
+				sol = IdeApp.ProjectOperations.CurrentSelectedSolutionItem;
+				if (sol != null)
+					repo = VersionControlService.GetRepository (sol);
 			}
 			if (repo == null || repo.VersionControlSystem == null || !repo.VersionControlSystem.IsInstalled)
 				return list;
-			
-			list.Add (new VersionControlItem (repo, wob, wob.BaseDirectory, true, null));
+
+			list.Add (new VersionControlItem (repo, wob, wob.FileName, true, null));
 			return list;
 		}
 		
@@ -60,6 +62,11 @@ namespace MonoDevelop.VersionControl
 		
 		protected override void Update (CommandInfo info)
 		{
+			if (VersionControlService.IsGloballyDisabled) {
+				info.Visible = false;
+				return;
+			}
+
 			VersionControlItemList items = GetItems ();
 			info.Enabled = items.Count > 0 && RunCommand (items, true);
 		}
@@ -70,18 +77,19 @@ namespace MonoDevelop.VersionControl
 		}
 	}
 	
-	class FileVersionControlCommandHalder: CommandHandler
+	class FileVersionControlCommandHandler: CommandHandler
 	{
-		protected VersionControlItemList GetItems ()
+		protected static VersionControlItemList GetItems ()
 		{
 			VersionControlItemList list = new VersionControlItemList ();
 			VersionControlItem it = GetItem ();
+
 			if (it != null)
 				list.Add (it);
 			return list;
 		}
 		
-		protected VersionControlItem GetItem ()
+		protected static VersionControlItem GetItem ()
 		{
 			Document doc = IdeApp.Workbench.ActiveDocument;
 			if (doc == null || !doc.IsFile)
@@ -106,6 +114,11 @@ namespace MonoDevelop.VersionControl
 		
 		protected override void Update (CommandInfo info)
 		{
+			if (VersionControlService.IsGloballyDisabled) {
+				info.Visible = false;
+				return;
+			}
+
 			VersionControlItemList items = GetItems ();
 			info.Enabled = items.Count > 0 && RunCommand (items, true);
 		}
@@ -116,7 +129,7 @@ namespace MonoDevelop.VersionControl
 		}
 	}	
 
-	class UpdateCommandHandler: SolutionVersionControlCommandHalder
+	class UpdateCommandHandler: SolutionVersionControlCommandHandler
 	{
 		protected override bool RunCommand (VersionControlItemList items, bool test)
 		{
@@ -124,23 +137,15 @@ namespace MonoDevelop.VersionControl
 		}
 	}
 	
-	class StatusCommandHandler: SolutionVersionControlCommandHalder
+	class StatusCommandHandler: SolutionVersionControlCommandHandler
 	{
 		protected override bool RunCommand (VersionControlItemList items, bool test)
 		{
-			return StatusView.Show (items, test);
+			return StatusView.Show (items, test, true);
 		}
 	}
-	
-	class CommitCommandHandler: SolutionVersionControlCommandHalder
-	{
-		protected override bool RunCommand (VersionControlItemList items, bool test)
-		{
-			return CommitCommand.Commit (items, test);
-		}
-	}
-	
-	class AddCommandHandler: FileVersionControlCommandHalder
+
+	class AddCommandHandler: FileVersionControlCommandHandler
 	{
 		protected override bool RunCommand (VersionControlItemList items, bool test)
 		{
@@ -154,7 +159,7 @@ namespace MonoDevelop.VersionControl
 		}
 	}
 	
-	class RemoveCommandHandler: FileVersionControlCommandHalder
+	class RemoveCommandHandler: FileVersionControlCommandHandler
 	{
 		protected override bool RunCommand (VersionControlItemList items, bool test)
 		{
@@ -168,7 +173,7 @@ namespace MonoDevelop.VersionControl
 		}
 	}
 	
-	class RevertCommandHandler: FileVersionControlCommandHalder
+	class RevertCommandHandler: FileVersionControlCommandHandler
 	{
 		protected override bool RunCommand (VersionControlItemList items, bool test)
 		{
@@ -182,7 +187,7 @@ namespace MonoDevelop.VersionControl
 		}
 	}
 	
-	class LockCommandHandler: FileVersionControlCommandHalder
+	class LockCommandHandler: FileVersionControlCommandHandler
 	{
 		protected override bool RunCommand (VersionControlItemList items, bool test)
 		{
@@ -196,7 +201,7 @@ namespace MonoDevelop.VersionControl
 		}
 	}
 	
-	class UnlockCommandHandler: FileVersionControlCommandHalder
+	class UnlockCommandHandler: FileVersionControlCommandHandler
 	{
 		protected override bool RunCommand (VersionControlItemList items, bool test)
 		{
@@ -210,7 +215,35 @@ namespace MonoDevelop.VersionControl
 		}
 	}
 
-	class CurrentFileDiffHandler : FileVersionControlCommandHalder
+	class IgnoreCommandHandler : FileVersionControlCommandHandler
+	{
+		protected override bool RunCommand (VersionControlItemList items, bool test)
+		{
+			return IgnoreCommand.Ignore (items, test);
+		}
+
+		protected override void Update (CommandInfo info)
+		{
+			base.Update (info);
+			info.Text = GettextCatalog.GetString ("Add to ignore list");
+		}
+	}
+
+	class UnignoreCommandHandler : FileVersionControlCommandHandler
+	{
+		protected override bool RunCommand (VersionControlItemList items, bool test)
+		{
+			return UnignoreCommand.Unignore (items, test);
+		}
+
+		protected override void Update (CommandInfo info)
+		{
+			base.Update (info);
+			info.Text = GettextCatalog.GetString ("Remove from ignore list");
+		}
+	}
+
+	class CurrentFileDiffHandler : FileVersionControlCommandHandler
 	{
 		protected override void Run ()
 		{
@@ -219,7 +252,7 @@ namespace MonoDevelop.VersionControl
 		}
 	}
 	
-	class CurrentFileBlameHandler : FileVersionControlCommandHalder
+	class CurrentFileBlameHandler : FileVersionControlCommandHandler
 	{
 		protected override void Run ()
 		{
@@ -228,7 +261,7 @@ namespace MonoDevelop.VersionControl
 		}
 	}
 	
-	class CurrentFileLogHandler : FileVersionControlCommandHalder
+	class CurrentFileLogHandler : FileVersionControlCommandHandler
 	{
 		protected override void Run ()
 		{

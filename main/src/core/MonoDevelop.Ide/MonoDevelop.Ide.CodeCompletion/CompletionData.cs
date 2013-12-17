@@ -34,7 +34,7 @@ using ICSharpCode.NRefactory.Completion;
 
 namespace MonoDevelop.Ide.CodeCompletion
 {
-	public class CompletionData : ICompletionData
+	public class CompletionData : ICompletionData, IComparable
 	{
 		protected CompletionData () {}
 		
@@ -43,7 +43,21 @@ namespace MonoDevelop.Ide.CodeCompletion
 		public virtual string Description { get; set; }
 		public virtual string CompletionText { get; set; }
 
+		[Obsolete("Use GetDisplayDescription (bool isSelected)")]
 		public virtual string DisplayDescription { get; set; }
+
+		public virtual string GetDisplayDescription (bool isSelected)
+		{
+#pragma warning disable 618
+			return DisplayDescription;
+#pragma warning restore 618
+		}
+
+		public virtual string GetRightSideDescription (bool isSelected)
+		{
+			return "";
+		}
+
 		public virtual CompletionCategory CompletionCategory { get; set; }
 		public virtual DisplayFlags DisplayFlags { get; set; }
 
@@ -60,13 +74,13 @@ namespace MonoDevelop.Ide.CodeCompletion
 		
 		public virtual IEnumerable<ICompletionData> OverloadedData {
 			get {
-				throw new System.InvalidOperationException ();
+				throw new InvalidOperationException ();
 			}
 		}
 		
 		public virtual void AddOverload (ICompletionData data)
 		{
-			throw new System.InvalidOperationException ();
+			throw new InvalidOperationException ();
 		}
 		
 		public CompletionData (string text) : this (text, null, null) {}
@@ -100,5 +114,32 @@ namespace MonoDevelop.Ide.CodeCompletion
 		{
 			return string.Format ("[CompletionData: Icon={0}, DisplayText={1}, Description={2}, CompletionText={3}, DisplayFlags={4}]", Icon, DisplayText, Description, CompletionText, DisplayFlags);
 		}
+
+		#region IComparable implementation
+
+		public virtual int CompareTo (object obj)
+		{
+			if (!(obj is ICompletionData))
+				return 0;
+			return Compare (this, (ICompletionData)obj);
+		}
+
+		public static int Compare (ICompletionData a, ICompletionData b)
+		{
+			var result =  ((a.DisplayFlags & DisplayFlags.Obsolete) == (b.DisplayFlags & DisplayFlags.Obsolete)) ? StringComparer.OrdinalIgnoreCase.Compare (a.DisplayText, b.DisplayText) : (a.DisplayFlags & DisplayFlags.Obsolete) != 0 ? 1 : -1;
+			if (result == 0) {
+				var aIsImport = (a.DisplayFlags & DisplayFlags.IsImportCompletion) != 0;
+				var bIsImport = (b.DisplayFlags & DisplayFlags.IsImportCompletion) != 0;
+				if (!aIsImport && bIsImport)
+					return -1;
+				if (aIsImport && !bIsImport)
+					return 1;
+				if (aIsImport && bIsImport)
+					return StringComparer.Ordinal.Compare (a.Description, b.Description);
+			}
+			return result;
+		}
+
+		#endregion
 	}
 }

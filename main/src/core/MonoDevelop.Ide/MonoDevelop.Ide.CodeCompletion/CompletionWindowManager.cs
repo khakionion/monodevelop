@@ -36,7 +36,7 @@ namespace MonoDevelop.Ide.CodeCompletion
 		
 		public static bool IsVisible {
 			get {
-				return wnd != null /*&& wnd.Visible*/;
+				return wnd != null && wnd.Visible;
 			}
 		}
 		
@@ -61,12 +61,12 @@ namespace MonoDevelop.Ide.CodeCompletion
 				return wnd.CodeCompletionContext;
 			}
 		}
-		
-		static bool forceSuggestionMode;
+
+		static PropertyWrapper<bool> forceSuggestionMode = PropertyService.Wrap ("ForceCompletionSuggestionMode", false);
 		public static bool ForceSuggestionMode {
 			get { return forceSuggestionMode; }
 			set {
-				forceSuggestionMode = value; 
+				forceSuggestionMode.Value = value; 
 				if (wnd != null) {
 					wnd.AutoCompleteEmptyMatch = wnd.AutoSelect = !forceSuggestionMode;
 				}
@@ -104,7 +104,7 @@ namespace MonoDevelop.Ide.CodeCompletion
 					if (ForceSuggestionMode)
 						wnd.AutoSelect = false;
 					wnd.Show ();
-					IdeApp.Workbench.Toolbar.RemoveDecorationsWorkaround (wnd);
+					DesktopService.RemoveWindowShadow (wnd);
 					OnWindowShown (EventArgs.Empty);
 					return true;
 				} catch (Exception ex) {
@@ -138,6 +138,9 @@ namespace MonoDevelop.Ide.CodeCompletion
 		{
 			if (!IsVisible)
 				return false;
+			if (keyChar != '\0') {
+				wnd.EndOffset = wnd.StartOffset + wnd.CurrentPartialWord.Length + 1;
+			}
 			return wnd.PreProcessKeyEvent (key, keyChar, modifier);
 		}
 
@@ -174,6 +177,13 @@ namespace MonoDevelop.Ide.CodeCompletion
 				return;
 			wnd.PostProcessKeyEvent (key, keyChar, modifier);
 		}
+
+		public static void RepositionWindow ()
+		{
+			if (!IsVisible)
+				return;
+			wnd.RepositionWindow ();
+		}
 		
 		public static void HideWindow ()
 		{
@@ -182,9 +192,9 @@ namespace MonoDevelop.Ide.CodeCompletion
 			ParameterInformationWindowManager.UpdateWindow (wnd.Extension, wnd.CompletionWidget);
 			if (wnd.Extension != null)
 				wnd.Extension.document.Editor.FixVirtualIndentation ();
-//			wnd.HideWindow ();
-//			OnWindowClosed (EventArgs.Empty);
-			DestroyWindow ();
+			wnd.HideWindow ();
+			OnWindowClosed (EventArgs.Empty);
+			//DestroyWindow ();
 		}
 		
 		

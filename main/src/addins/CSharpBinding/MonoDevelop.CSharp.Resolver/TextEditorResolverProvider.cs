@@ -45,7 +45,7 @@ using ICSharpCode.NRefactory.CSharp.Refactoring;
 
 namespace MonoDevelop.CSharp.Resolver
 {
-	public class TextEditorResolverProvider : ITextEditorResolverProvider
+	class TextEditorResolverProvider : ITextEditorResolverProvider
 	{
 		#region ITextEditorResolverProvider implementation
 		
@@ -148,18 +148,18 @@ namespace MonoDevelop.CSharp.Resolver
 		
 		static string GetString (IMember member)
 		{
-			switch (member.EntityType) {
-			case EntityType.Field:
+			switch (member.SymbolKind) {
+			case SymbolKind.Field:
 				var field = member as IField;
 				if (field.IsConst)
 					return GettextCatalog.GetString ("Constant");
 				return GettextCatalog.GetString ("Field");
-			case EntityType.Property:
+			case SymbolKind.Property:
 				return GettextCatalog.GetString ("Property");
-			case EntityType.Indexer:
+			case SymbolKind.Indexer:
 				return GettextCatalog.GetString ("Indexer");
 				
-			case EntityType.Event:
+			case SymbolKind.Event:
 				return GettextCatalog.GetString ("Event");
 			}
 			return GettextCatalog.GetString ("Member");
@@ -177,12 +177,12 @@ namespace MonoDevelop.CSharp.Resolver
 
 		static TypeSystemAstBuilder CreateBuilder (MonoDevelop.Ide.Gui.Document doc, int offset, ICompilation compilation)
 		{
-			var ctx = doc.ParsedDocument.ParsedFile.GetTypeResolveContext (doc.Compilation, doc.Editor.Caret.Location) as CSharpTypeResolveContext;
-			var state = new CSharpResolver (ctx);
+			var ctx = doc.ParsedDocument.ParsedFile as CSharpUnresolvedFile;
+			var state = ctx.GetResolver (doc.Compilation, doc.Editor.OffsetToLocation (offset));
 			var builder = new TypeSystemAstBuilder (state);
 			builder.AddAnnotations = true;
 			var dt = state.CurrentTypeDefinition;
-			var declaring = ctx.CurrentTypeDefinition != null ? ctx.CurrentTypeDefinition.DeclaringTypeDefinition : null;
+			var declaring = dt != null ? dt.DeclaringTypeDefinition : null;
 			if (declaring != null) {
 				while (dt != null) {
 					if (dt.Equals (declaring)) {

@@ -37,7 +37,7 @@ using ICSharpCode.NRefactory.TypeSystem;
 
 namespace MonoDevelop.CodeGeneration
 {
-	public class WriteLineGenerator: ICodeGenerator
+	class WriteLineGenerator: ICodeGenerator
 	{
 		public string Icon {
 			get {
@@ -139,7 +139,7 @@ namespace MonoDevelop.CodeGeneration
 				foreach (var member in includedMembers) {
 					invocationExpression.Arguments.Add (new IdentifierExpression (GetName (member)));
 				}
-				yield return new ExpressionStatement (invocationExpression).GetText (Options.FormattingOptions);
+				yield return new ExpressionStatement (invocationExpression).ToString (Options.FormattingOptions);
 			}
 		}
 	}

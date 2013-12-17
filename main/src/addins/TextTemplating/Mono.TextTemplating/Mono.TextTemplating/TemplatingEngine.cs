@@ -37,7 +37,7 @@ using System.Reflection;
 
 namespace Mono.TextTemplating
 {
-	public class TemplatingEngine : MarshalByRefObject, Microsoft.VisualStudio.TextTemplating.ITextTemplatingEngine
+	public class TemplatingEngine : MarshalByRefObject, ITextTemplatingEngine
 	{
 		public string ProcessTemplate (string content, ITextTemplatingEngineHost host)
 		{
@@ -477,7 +477,7 @@ namespace Mono.TextTemplating
 					st = new CodeExpressionStatement (new CodeMethodInvokeExpression (writeMeth, new CodePrimitiveExpression (seg.Text)));
 					break;
 				case SegmentType.Helper:
-					type.Members.Add (new CodeSnippetTypeMember (seg.Text) { LinePragma = location });
+					type.Members.Add (CreateSnippetMember (seg.Text, location));
 					helperMode = true;
 					break;
 				default:
@@ -489,7 +489,7 @@ namespace Mono.TextTemplating
 						//TODO: is there a way to do this for languages that use indentation for blocks, e.g. python?
 						using (var writer = new StringWriter ()) {
 							settings.Provider.GenerateCodeFromStatement (st, writer, null);
-							type.Members.Add (new CodeSnippetTypeMember (writer.ToString ()) { LinePragma = location });
+							type.Members.Add (CreateSnippetMember (writer.ToString (), location ));
 						}
 					} else {
 						st.LinePragma = location;
@@ -512,7 +512,7 @@ namespace Mono.TextTemplating
 			foreach (var processor in settings.DirectiveProcessors.Values) {
 				string classCode = processor.GetClassCodeForProcessingRun ();
 				if (classCode != null)
-					type.Members.Add (new CodeSnippetTypeMember (classCode));
+					type.Members.Add (CreateSnippetMember (classCode));
 			}
 			
 			//generate the Host property if needed
@@ -529,6 +529,18 @@ namespace Mono.TextTemplating
 				namespac.Types.Add (baseClass);
 			}
 			return ccu;
+		}
+
+		static CodeSnippetTypeMember CreateSnippetMember (string value, CodeLinePragma location = null)
+		{
+			//HACK: workaround for code generator not indenting first line of member snippet when inserting into class
+			const string indent = "\n        ";
+			if (!char.IsWhiteSpace (value[0]))
+				value = indent + value;
+
+			return new CodeSnippetTypeMember (value) {
+				LinePragma = location
+			};
 		}
 		
 		static void GenerateHostProperty (CodeTypeDeclaration type, TemplateSettings settings)

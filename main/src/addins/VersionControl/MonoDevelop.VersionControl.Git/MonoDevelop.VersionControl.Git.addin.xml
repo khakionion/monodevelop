@@ -6,16 +6,17 @@
        url         = "http://www.monodevelop.com/"
        description = "Git support for the Version Control Add-in"
        category    = "Version Control"
-       version     = "4.0.1">
+       version     = "4.2.2">
  
 	<Runtime>
 		<Import assembly="MonoDevelop.VersionControl.Git.dll"/>
+		<Import assembly="NGit.dll"/>
 	</Runtime>
 
 	<Dependencies>
-	    <Addin id="Core" version="4.0.1"/>
-	    <Addin id="Ide" version="4.0.1"/>
-	    <Addin id="VersionControl" version="4.0.1"/>
+	    <Addin id="Core" version="4.2.2"/>
+	    <Addin id="Ide" version="4.2.2"/>
+	    <Addin id="VersionControl" version="4.2.2"/>
 	</Dependencies>
 
 	<Extension path="/MonoDevelop/VersionControl/VersionControlSystems">
@@ -55,7 +56,7 @@
 	</Extension>
 
 	<Extension path = "/MonoDevelop/Ide/MainMenu/VersionControl">
-		<SeparatorItem insertafter="MonoDevelop.VersionControl.Commands.CommitSolution"/>
+		<SeparatorItem insertafter="MonoDevelop.VersionControl.Commands.SolutionStatus"/>
 		<CommandItem id = "MonoDevelop.VersionControl.Git.Commands.Push" />
 		<ItemSet id = "SwitchToBranch" _label = "Switch to Branch" autohide="true">
 			<CommandItem id = "MonoDevelop.VersionControl.Git.Commands.SwitchToBranch"/>

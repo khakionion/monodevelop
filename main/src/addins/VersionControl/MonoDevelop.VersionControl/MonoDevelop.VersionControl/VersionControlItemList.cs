@@ -25,8 +25,6 @@
 //
 //
 
-using System;
-using MonoDevelop.Projects;
 using System.Collections.Generic;
 using MonoDevelop.Core;
 
@@ -77,6 +75,13 @@ namespace MonoDevelop.VersionControl
 					paths [n] = this [n].Path;
 				return paths;
 			}
+		}
+
+		// Finds the most specific ancestor path of a set of version control items.
+		// Returns FilePath.Null if no parent is found.
+		public FilePath FindMostSpecificParent ()
+		{
+			return FilePath.GetCommonRootPath (Paths);
 		}
 	}
 }

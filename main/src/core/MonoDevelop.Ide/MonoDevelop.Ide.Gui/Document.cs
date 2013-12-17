@@ -47,6 +47,7 @@ using MonoDevelop.Ide.Extensions;
 using System.Linq;
 using System.Threading;
 using MonoDevelop.Ide.TypeSystem;
+using ICSharpCode.NRefactory;
 using ICSharpCode.NRefactory.TypeSystem;
 using ICSharpCode.NRefactory.TypeSystem.Implementation;
 using System.Text;
@@ -60,7 +61,10 @@ namespace MonoDevelop.Ide.Gui
 		
 		IWorkbenchWindow window;
 		TextEditorExtension editorExtension;
-		
+		ParsedDocument parsedDocument;
+		IProjectContent singleFileContext;
+		Mono.TextEditor.ITextEditorDataProvider provider = null;
+
 		const int ParseDelay = 600;
 
 		public IWorkbenchWindow Window {
@@ -78,6 +82,8 @@ namespace MonoDevelop.Ide.Gui
  		
 		public T GetContent<T> () where T : class
 		{
+			if (window == null)
+				return null;
 			//check whether the ViewContent can return the type directly
 			T ret = Window.ActiveViewContent.GetContent (typeof(T)) as T;
 			if (ret != null)
@@ -90,7 +96,7 @@ namespace MonoDevelop.Ide.Gui
 				if (ret != null)
 					return ret;
 			}
-			
+
 			//no, so look through the TexteditorExtensions as well
 			TextEditorExtension nextExtension = editorExtension;
 			while (nextExtension != null) {
@@ -162,7 +168,7 @@ namespace MonoDevelop.Ide.Gui
 
 		public FilePath FileName {
 			get {
-				if (!Window.ViewContent.IsFile)
+				if (Window == null || !Window.ViewContent.IsFile)
 					return null;
 				return Window.ViewContent.IsUntitled ? Window.ViewContent.UntitledName : Window.ViewContent.ContentName;
 			}
@@ -178,11 +184,11 @@ namespace MonoDevelop.Ide.Gui
 		}
 		
 		public bool HasProject {
-			get { return Window.ViewContent.Project != null; }
+			get { return Window != null ? Window.ViewContent.Project != null : false; }
 		}
 		
 		public Project Project {
-			get { return Window.ViewContent.Project; }
+			get { return Window != null ? Window.ViewContent.Project : null; }
 /*			set { 
 				Window.ViewContent.Project = value; 
 				if (value != null)
@@ -203,7 +209,6 @@ namespace MonoDevelop.Ide.Gui
 			}
 		}
 
-		IProjectContent singleFileContext;
 		public  IProjectContent ProjectContent {
 			get {
 				return Project != null ? TypeSystemService.GetProjectContext (Project) : GetProjectContext ();
@@ -216,7 +221,6 @@ namespace MonoDevelop.Ide.Gui
 			}
 		}
 		
-		ParsedDocument parsedDocument;
 		public virtual ParsedDocument ParsedDocument {
 			get {
 				return parsedDocument;
@@ -292,7 +296,6 @@ namespace MonoDevelop.Ide.Gui
 			}
 		}
 
-		Mono.TextEditor.ITextEditorDataProvider provider = null;
 		public Mono.TextEditor.TextEditorData Editor {
 			get {
 				if (provider == null) {
@@ -338,8 +341,11 @@ namespace MonoDevelop.Ide.Gui
 				if (Window.ViewContent.ContentName == null) {
 					SaveAs ();
 				} else {
-					if (!FileService.RequestFileEdit (Window.ViewContent.ContentName))
-						MessageService.ShowMessage (GettextCatalog.GetString ("The file could not be saved. Write permission has not been granted."));
+					try {
+						FileService.RequestFileEdit (Window.ViewContent.ContentName, true);
+					} catch (Exception ex) {
+						MessageService.ShowException (ex, GettextCatalog.GetString ("The file could not be saved."));
+					}
 					
 					FileAttributes attr = FileAttributes.ReadOnly | FileAttributes.Directory | FileAttributes.Offline | FileAttributes.System;
 	
@@ -514,33 +520,14 @@ namespace MonoDevelop.Ide.Gui
 			CancelParseTimeout ();
 			ClearTasks ();
 			TypeSystemService.RemoveSkippedfile (FileName);
-			if (window is SdiWorkspaceWindow)
-				((SdiWorkspaceWindow)window).DetachFromPathedDocument ();
-			window.Closed -= OnClosed;
-			window.ActiveViewContentChanged -= OnActiveViewContentChanged;
-			if (IdeApp.Workspace != null)
-				IdeApp.Workspace.ItemRemovedFromSolution -= OnEntryRemoved;
 
-			// Unsubscribe project events
-			if (window.ViewContent.Project != null)
-				window.ViewContent.Project.Modified -= HandleProjectModified;
 
 			try {
 				OnClosed (a);
 			} catch (Exception ex) {
 				LoggingService.LogError ("Exception while calling OnClosed.", ex);
 			}
-			
-			while (editorExtension != null) {
-				try {
-					editorExtension.Dispose ();
-				} catch (Exception ex) {
-					LoggingService.LogError ("Exception while disposing extension:" + editorExtension, ex);
-				}
-				editorExtension = editorExtension.Next as TextEditorExtension;
-			}
-			editorExtension = null;
-			
+
 			// Parse the file when the document is closed. In this way if the document
 			// is closed without saving the changes, the saved compilation unit
 			// information will be restored
@@ -554,9 +541,31 @@ namespace MonoDevelop.Ide.Gui
 				dom = null;
 			}*/
 			
-			parsedDocument = null;
-			provider = null;
 			Counters.OpenDocuments--;
+		}
+
+		internal void DisposeDocument ()
+		{
+			DetachExtensionChain ();
+			RemoveAnnotations (typeof(System.Object));
+			if (window is SdiWorkspaceWindow)
+				((SdiWorkspaceWindow)window).DetachFromPathedDocument ();
+			window.Closed -= OnClosed;
+			window.ActiveViewContentChanged -= OnActiveViewContentChanged;
+			if (IdeApp.Workspace != null)
+				IdeApp.Workspace.ItemRemovedFromSolution -= OnEntryRemoved;
+
+			// Unsubscribe project events
+			if (window.ViewContent.Project != null)
+				window.ViewContent.Project.Modified -= HandleProjectModified;
+			window.ViewsChanged += HandleViewsChanged;
+			window = null;
+
+			parsedDocument = null;
+			singleFileContext = null;
+			provider = null;
+			views = null;
+			viewsRO = null;
 		}
 #region document tasks
 		object lockObj = new object ();
@@ -603,7 +612,45 @@ namespace MonoDevelop.Ide.Gui
 		}
 		
 		bool wasEdited;
-		
+
+		void InitializeExtensionChain ()
+		{
+			DetachExtensionChain ();
+			var editor = GetContent<IExtensibleTextEditor> ();
+
+			ExtensionNodeList extensions = window.ExtensionContext.GetExtensionNodes ("/MonoDevelop/Ide/TextEditorExtensions", typeof(TextEditorExtensionNode));
+			editorExtension = null;
+			TextEditorExtension last = null;
+			foreach (TextEditorExtensionNode extNode in extensions) {
+				if (!extNode.Supports (FileName))
+					continue;
+				TextEditorExtension ext = (TextEditorExtension)extNode.CreateInstance ();
+				if (ext.ExtendsEditor (this, editor)) {
+					if (editorExtension == null)
+						editorExtension = ext;
+					if (last != null)
+						last.Next = ext;
+					last = ext;
+					ext.Initialize (this);
+				}
+			}
+			if (editorExtension != null)
+				last.Next = editor.AttachExtension (editorExtension);
+		}
+
+		void DetachExtensionChain ()
+		{
+			while (editorExtension != null) {
+				try {
+					editorExtension.Dispose ();
+				} catch (Exception ex) {
+					LoggingService.LogError ("Exception while disposing extension:" + editorExtension, ex);
+				}
+				editorExtension = editorExtension.Next as TextEditorExtension;
+			}
+			editorExtension = null;
+		}
+
 		void InitializeEditor (IExtensibleTextEditor editor)
 		{
 			Editor.Document.TextReplaced += (o, a) => {
@@ -627,31 +674,8 @@ namespace MonoDevelop.Ide.Gui
 			};
 			Editor.Document.Undone += (o, a) => StartReparseThread ();
 			Editor.Document.Redone += (o, a) => StartReparseThread ();
-			
-			// If the new document is a text editor, attach the extensions
-			
-			ExtensionNodeList extensions = window.ExtensionContext.GetExtensionNodes ("/MonoDevelop/Ide/TextEditorExtensions", typeof(TextEditorExtensionNode));
-			editorExtension = null;
-			TextEditorExtension last = null;
-			foreach (TextEditorExtensionNode extNode in extensions) {
-				if (!extNode.Supports (FileName))
-					continue;
-				
-				TextEditorExtension ext = (TextEditorExtension)extNode.CreateInstance ();
-				if (ext.ExtendsEditor (this, editor)) {
-					if (editorExtension == null)
-						editorExtension = ext;
-					
-					if (last != null)
-						last.Next = ext;
-					
-					last = ext;
-					ext.Initialize (this);
-				}
-			}
-			
-			if (editorExtension != null)
-				last.Next = editor.AttachExtension (editorExtension);
+
+			InitializeExtensionChain ();
 		}
 		
 		internal void OnDocumentAttached ()
@@ -659,7 +683,7 @@ namespace MonoDevelop.Ide.Gui
 			IExtensibleTextEditor editor = GetContent<IExtensibleTextEditor> ();
 			if (editor != null) {
 				InitializeEditor (editor);
-				RunWhenLoaded (() => ReparseDocument ());
+				RunWhenLoaded (delegate { ListenToProjectLoad (Project); });
 			}
 			
 			window.Document = this;
@@ -683,20 +707,13 @@ namespace MonoDevelop.Ide.Gui
 			}
 			e.Document.RunWhenLoaded (action);
 		}
-		
+
+		TypeSystemService.ProjectContentWrapper currentWrapper;
 		internal void SetProject (Project project)
 		{
 			if (Window.ViewContent.Project == project)
 				return;
-			while (editorExtension != null) {
-				try {
-					editorExtension.Dispose ();
-				} catch (Exception ex) {
-					LoggingService.LogError ("Exception while disposing extension:" + editorExtension, ex);
-				}
-				editorExtension = editorExtension.Next as TextEditorExtension;
-			}
-			editorExtension = null;
+			DetachExtensionChain ();
 			ISupportsProjectReload pr = GetContent<ISupportsProjectReload> ();
 			if (pr != null) {
 				// Unsubscribe project events
@@ -707,15 +724,36 @@ namespace MonoDevelop.Ide.Gui
 			}
 			if (project != null)
 				project.Modified += HandleProjectModified;
-			OnDocumentAttached ();
+			InitializeExtensionChain ();
+
+			ListenToProjectLoad (project);
+		}
+
+		void ListenToProjectLoad (Project project)
+		{
+			if (currentWrapper != null) {
+				currentWrapper.Loaded -= HandleInLoadChanged;
+				currentWrapper = null;
+			}
+			if (project != null) {
+				var wrapper = TypeSystemService.GetProjectContentWrapper (project);
+				wrapper.Loaded += HandleInLoadChanged;
+				currentWrapper = wrapper;
+				RunWhenLoaded (delegate {
+					currentWrapper.RequestLoad ();
+				});
+			}
+			StartReparseThread ();
+		}
+
+		void HandleInLoadChanged (object sender, EventArgs e)
+		{
+			StartReparseThread ();
 		}
 
 		void HandleProjectModified (object sender, SolutionItemModifiedEventArgs e)
 		{
-			if (!e.Any (
-					x => x is SolutionItemModifiedEventInfo &&
-				(((SolutionItemModifiedEventInfo)x).Hint == "TargetFramework" ||
-				((SolutionItemModifiedEventInfo)x).Hint == "References")))
+			if (!e.Any (x => x.Hint == "TargetFramework" || x.Hint == "References"))
 				return;
 			StartReparseThread ();
 		}
@@ -731,7 +769,7 @@ namespace MonoDevelop.Ide.Gui
 			try {
 				string currentParseFile = FileName;
 				var editor = Editor;
-				if (editor == null)
+				if (editor == null || string.IsNullOrEmpty (currentParseFile))
 					return null;
 				TypeSystemService.AddSkippedFile (currentParseFile);
 				string currentParseText = editor.Text;
@@ -740,18 +778,27 @@ namespace MonoDevelop.Ide.Gui
 					singleFileContext = GetProjectContext ().AddOrUpdateFiles (parsedDocument.ParsedFile);
 				}
 			} finally {
+
 				OnDocumentParsed (EventArgs.Empty);
 			}
 			return this.parsedDocument;
 		}
 
-		static readonly Lazy<IUnresolvedAssembly> mscorlib = new Lazy<IUnresolvedAssembly> ( () => new CecilLoader ().LoadAssemblyFile (typeof (object).Assembly.Location));
-		static readonly Lazy<IUnresolvedAssembly> systemCore = new Lazy<IUnresolvedAssembly>( () => new CecilLoader ().LoadAssemblyFile (typeof (System.Linq.Enumerable).Assembly.Location));
-		static readonly Lazy<IUnresolvedAssembly> system = new Lazy<IUnresolvedAssembly>( () => new CecilLoader ().LoadAssemblyFile (typeof (System.Uri).Assembly.Location));
+		static readonly Lazy<IUnresolvedAssembly> mscorlib = new Lazy<IUnresolvedAssembly> ( () => new IkvmLoader ().LoadAssemblyFile (typeof (object).Assembly.Location));
+		static readonly Lazy<IUnresolvedAssembly> systemCore = new Lazy<IUnresolvedAssembly>( () => new IkvmLoader ().LoadAssemblyFile (typeof (System.Linq.Enumerable).Assembly.Location));
+		static readonly Lazy<IUnresolvedAssembly> system = new Lazy<IUnresolvedAssembly>( () => new IkvmLoader ().LoadAssemblyFile (typeof (System.Uri).Assembly.Location));
 
 		static IUnresolvedAssembly Mscorlib { get { return mscorlib.Value; } }
 		static IUnresolvedAssembly SystemCore { get { return systemCore.Value; } }
 		static IUnresolvedAssembly System { get { return system.Value; } }
+
+		public bool IsProjectContextInUpdate {
+			get {
+				if (currentWrapper == null)
+					return false;
+				return currentWrapper.InLoad || !currentWrapper.ReferencesConnected;
+			}
+		}
 
 		public virtual IProjectContent GetProjectContext ()
 		{
@@ -775,21 +822,29 @@ namespace MonoDevelop.Ide.Gui
 			// very inefficient. Do it after a small delay instead, so several changes can
 			// be parsed at the same time.
 			string currentParseFile = FileName;
+			if (string.IsNullOrEmpty (currentParseFile))
+				return;
 			CancelParseTimeout ();
-			
+			if (IsProjectContextInUpdate)
+				return;
 			parseTimeout = GLib.Timeout.Add (ParseDelay, delegate {
 				var editor = Editor;
-				if (editor == null)
+				if (editor == null || IsProjectContextInUpdate) {
+					parseTimeout = 0;
 					return false;
+				}
 				string currentParseText = editor.Text;
 				string mimeType = editor.Document.MimeType;
 				ThreadPool.QueueUserWorkItem (delegate {
+					if (IsProjectContextInUpdate)
+						return;
 					TypeSystemService.AddSkippedFile (currentParseFile);
 					var currentParsedDocument = TypeSystemService.ParseFile (Project, currentParseFile, mimeType, currentParseText);
 					Application.Invoke (delegate {
 						// this may be called after the document has closed, in that case the OnDocumentParsed event shouldn't be invoked.
 						if (isClosed)
 							return;
+
 						this.parsedDocument = currentParsedDocument;
 						OnDocumentParsed (EventArgs.Empty);
 					});
@@ -881,6 +936,14 @@ namespace MonoDevelop.Ide.Gui
 //				Editor.Options.TabsToSpaces, Editor.Options.TabSize, Editor.EolMarker);
 //		}
 
+		/// <summary>
+		/// If the document shouldn't restore the settings after the load it can be disabled with this method.
+		/// That is useful when opening a document and programmatically scrolling to a specified location.
+		/// </summary>
+		public void DisableAutoScroll ()
+		{
+			Mono.TextEditor.Utils.FileSettingsStore.Remove (FileName);
+		}
 	}
 	
 	

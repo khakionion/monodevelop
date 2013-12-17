@@ -26,13 +26,7 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading;
-using Mono.Addins;
-using MonoDevelop.Core.FileSystem;
 
 namespace MonoDevelop.Core
 {
@@ -42,7 +36,7 @@ namespace MonoDevelop.Core
 		static readonly StringComparer PathComparer = (Platform.IsWindows || Platform.IsMac) ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 		static readonly StringComparison PathComparison = (Platform.IsWindows || Platform.IsMac) ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
-		string fileName;
+		readonly string fileName;
 
 		public static readonly FilePath Null = new FilePath (null);
 		public static readonly FilePath Empty = new FilePath (string.Empty);
@@ -73,6 +67,12 @@ namespace MonoDevelop.Core
 				return new FilePath (!string.IsNullOrEmpty (fileName) ? Path.GetFullPath (fileName) : "");
 			}
 		}
+
+		public bool IsDirectory {
+			get {
+				return File.GetAttributes (FullPath).HasFlag(FileAttributes.Directory);
+			}
+		}
 		
 		/// <summary>
 		/// Returns a path in standard form, which can be used to be compared
@@ -84,10 +84,11 @@ namespace MonoDevelop.Core
 				if (string.IsNullOrEmpty (fileName))
 					return FilePath.Empty;
 				string fp = Path.GetFullPath (fileName);
-				if (fp.Length > 0 && fp[fp.Length - 1] == Path.DirectorySeparatorChar)
+				if (fp.Length > 0 && fp [fp.Length - 1] == Path.DirectorySeparatorChar)
 					return fp.TrimEnd (Path.DirectorySeparatorChar);
-				else
-					return fp;
+				if (fp.Length > 0 && fp [fp.Length - 1] == Path.AltDirectorySeparatorChar)
+					return fp.TrimEnd (Path.AltDirectorySeparatorChar);
+				return fp;
 			}
 		}
 

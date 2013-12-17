@@ -34,19 +34,28 @@ namespace MonoDevelop.Debugger
 	public partial class ExpressionEvaluatorDialog : Gtk.Dialog, ICompletionWidget
 	{
 		Mono.Debugging.Client.CompletionData currentCompletionData;
+		CodeCompletionContext ctx;
+		Gdk.ModifierType modifier;
+		bool keyHandled = false;
+		uint keyValue;
+		char keyChar;
+		Gdk.Key key;
 
-		public ExpressionEvaluatorDialog()
+		public ExpressionEvaluatorDialog ()
 		{
 			this.Build();
 			valueTree.Frame = DebuggingService.CurrentFrame;
 			valueTree.AllowExpanding = true;
+			entry.KeyReleaseEvent += OnEditKeyRelease;
 			entry.KeyPressEvent += OnEditKeyPress;
+			entry.FocusOutEvent += OnEditFocusOut;
 			CompletionWindowManager.WindowClosed += HandleCompletionWindowClosed;
 		}
 
 		protected override void OnDestroyed ()
 		{
 			CompletionWindowManager.WindowClosed -= HandleCompletionWindowClosed;
+			CompletionWindowManager.HideWindow ();
 			base.OnDestroyed ();
 		}
 
@@ -66,43 +75,70 @@ namespace MonoDevelop.Debugger
 				valueTree.AddExpression (entry.Text);
 		}
 		
-		protected virtual void OnButtonEvalClicked (object sender, System.EventArgs e)
+		protected virtual void OnButtonEvalClicked (object sender, EventArgs e)
 		{
+			CompletionWindowManager.HideWindow ();
 			UpdateExpression ();
 		}
 
-		private void HandleCompletionWindowClosed (object sender, EventArgs e)
+		void HandleCompletionWindowClosed (object sender, EventArgs e)
 		{
 			currentCompletionData = null;
 		}
 
-		[GLib.ConnectBeforeAttribute]
-		void OnEditKeyPress (object s, Gtk.KeyPressEventArgs args)
+		void PopupCompletion (Entry entry)
 		{
-			Gtk.Entry entry = (Gtk.Entry)s;
-			
-			if (currentCompletionData != null) {
-				bool ret = CompletionWindowManager.PreProcessKeyEvent (args.Event.Key, (char)args.Event.Key, args.Event.State);
-				CompletionWindowManager.PostProcessKeyEvent (args.Event.Key, (char)args.Event.Key, args.Event.State);
-				args.RetVal = ret;
-			}
-			
-			Gtk.Application.Invoke (delegate {
-				char c = (char)Gdk.Keyval.ToUnicode (args.Event.KeyValue);
+			Application.Invoke (delegate {
+				char c = (char) Gdk.Keyval.ToUnicode (keyValue);
 				if (currentCompletionData == null && IsCompletionChar (c)) {
 					string exp = entry.Text.Substring (0, entry.CursorPosition);
 					currentCompletionData = GetCompletionData (exp);
 					if (currentCompletionData != null) {
 						DebugCompletionDataList dataList = new DebugCompletionDataList (currentCompletionData);
-						CodeCompletionContext ctx = ((ICompletionWidget)this).CreateCodeCompletionContext (entry.CursorPosition - currentCompletionData.ExpressionLength);
+						ctx = ((ICompletionWidget) this).CreateCodeCompletionContext (entry.CursorPosition - currentCompletionData.ExpressionLength);
 						CompletionWindowManager.ShowWindow (null, c, dataList, this, ctx);
-					} else
+					} else {
 						currentCompletionData = null;
+					}
 				}
 			});
 		}
 
-		bool IsCompletionChar (char c)
+		void OnEditKeyRelease (object sender, EventArgs e)
+		{
+			if (keyHandled)
+				return;
+
+			string text = ctx == null ? entry.Text : entry.Text.Substring (Math.Max (0, Math.Min (ctx.TriggerOffset, entry.Text.Length)));
+			CompletionWindowManager.UpdateWordSelection (text);
+			CompletionWindowManager.PostProcessKeyEvent (key, keyChar, modifier);
+			PopupCompletion ((Entry) sender);
+		}
+
+		[GLib.ConnectBeforeAttribute]
+		void OnEditKeyPress (object sender, KeyPressEventArgs args)
+		{
+			keyHandled = false;
+
+			keyChar = (char) args.Event.Key;
+			keyValue = args.Event.KeyValue;
+			modifier = args.Event.State;
+			key = args.Event.Key;
+
+			if ((args.Event.Key == Gdk.Key.Down || args.Event.Key == Gdk.Key.Up)) {
+				keyChar = '\0';
+			}
+
+			if (currentCompletionData != null)
+				args.RetVal = keyHandled = CompletionWindowManager.PreProcessKeyEvent (key, keyChar, modifier);
+		}
+
+		void OnEditFocusOut (object sender, FocusOutEventArgs args)
+		{
+			CompletionWindowManager.HideWindow ();
+		}
+
+		static bool IsCompletionChar (char c)
 		{
 			return (char.IsLetterOrDigit (c) || char.IsPunctuation (c) || char.IsSymbol (c) || char.IsWhiteSpace (c));
 		}
@@ -111,8 +147,8 @@ namespace MonoDevelop.Debugger
 		{
 			if (valueTree.Frame != null)
 				return valueTree.Frame.GetExpressionCompletionData (exp);
-			else
-				return null;
+
+			return null;
 		}
 
 		#region ICompletionWidget implementation 
@@ -132,7 +168,7 @@ namespace MonoDevelop.Debugger
 		
 		string ICompletionWidget.GetText (int startOffset, int endOffset)
 		{
-			if (startOffset < 0) startOffset = 0;
+			if (startOffset < 0 || startOffset > entry.Text.Length) startOffset = 0;
 			if (endOffset > entry.Text.Length) endOffset = entry.Text.Length;
 			return entry.Text.Substring (startOffset, endOffset - startOffset);
 		}

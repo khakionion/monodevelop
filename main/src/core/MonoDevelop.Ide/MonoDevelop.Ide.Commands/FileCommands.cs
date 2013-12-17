@@ -178,7 +178,8 @@ namespace MonoDevelop.Ide.Commands
 	{
 		protected override void Run ()
 		{
-			IdeApp.Workbench.ActiveDocument.Close ();
+			if (IdeApp.Workbench.ActiveDocument != null)
+				IdeApp.Workbench.ActiveDocument.Close ();
 		}
 
 		protected override void Update (CommandInfo info)
@@ -229,9 +230,7 @@ namespace MonoDevelop.Ide.Commands
 		{
 			return false; // Unity
 			IPrintable print;
-			//HACK: disable printing on Windows while it doesn't work
-			return !Platform.IsWindows
-				&& IdeApp.Workbench.ActiveDocument != null
+			return IdeApp.Workbench.ActiveDocument != null
 				&& (print = IdeApp.Workbench.ActiveDocument.GetContent<IPrintable> ()) != null
 				&& print.CanPrint;
 		}
@@ -247,6 +246,12 @@ namespace MonoDevelop.Ide.Commands
 		protected override void Update (CommandInfo info)
 		{
 			info.Enabled = PrintHandler.CanPrint ();
+
+			//HACK: disable print preview on Win32 because it doesn't work
+			if (Platform.IsWindows) {
+				info.Enabled = false;
+				info.Visible = false;
+			}
 		}
 	}
 	
@@ -284,8 +289,10 @@ namespace MonoDevelop.Ide.Commands
 					Description = GettextCatalog.GetString ("Open {0}", ri.FileName)
 				};
 				Gdk.Pixbuf icon = DesktopService.GetPixbufForFile (ri.FileName, IconSize.Menu);
+				#pragma warning disable 618
 				if (icon != null)
 					cmd.Icon = ImageService.GetStockId (icon, IconSize.Menu);
+				#pragma warning restore 618
 				info.Add (cmd, ri.FileName);
 				i++;
 			}
@@ -413,4 +420,5 @@ namespace MonoDevelop.Ide.Commands
 	// MonoDevelop.Ide.Commands.FileTabCommands.CloseAllButThis    Implemented in FileTabCommands.cs
 	// MonoDevelop.Ide.Commands.CopyPathNameHandler                Implemented in FileTabCommands.cs
 	// MonoDevelop.Ide.Commands.FileTabCommands.ToggleMaximize     Implemented in FileTabCommands.cs
+	// MonoDevelop.Ide.Commands.FileTabCommands.ReopenClosedTab    Implemented in FileTabCommands.cs
 }

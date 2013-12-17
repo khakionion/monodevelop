@@ -87,10 +87,22 @@ namespace MonoDevelop.Components
 		
 		public void AddTab (Tab tab)
 		{
-			tabs.Add (tab);
-			tabSizes.Add (tab.Size);
+			InsertTab (tabs.Count, tab);
+		}
+
+		public void InsertTab (int index, Tab tab)
+		{
+			if (index < 0 || index >= tabs.Count) {
+				tabs.Add (tab);
+				tabSizes.Add (tab.Size);
+			} else {
+				tabs.Insert (index, tab);
+				tabSizes.Insert (index, tab.Size);
+			}
 			if (tabs.Count == 1)
 				tab.Active = true;
+			else if (activeTab >= index)
+				activeTab++;
 			QueueResize ();
 		}
 		
@@ -169,15 +181,16 @@ namespace MonoDevelop.Components
 		{
 			using (var cr = Gdk.CairoHelper.Create (evnt.Window)) {
 				cr.Rectangle (0, 0, Allocation.Width, Allocation.Height);
-				Cairo.LinearGradient gr = new LinearGradient (0, 0, 0, Allocation.Height);
-				gr.AddColorStop (0, BackgroundGradientStart);
-				gr.AddColorStop (1, BackgroundGradientEnd);
-				cr.Pattern = gr;
+				using (LinearGradient gr = new LinearGradient (0, 0, 0, Allocation.Height)) {
+					gr.AddColorStop (0, BackgroundGradientStart);
+					gr.AddColorStop (1, BackgroundGradientEnd);
+					cr.SetSource (gr);
+				}
 				cr.Fill ();
 
 				cr.MoveTo (0.5, 0.5);
 				cr.Line (0.5, 0.5, Allocation.Width - 1, 0.5);
-				cr.Color = new Cairo.Color (1,1,1);
+				cr.SetSourceRGB (1,1,1);
 				cr.LineWidth = 1;
 				cr.Stroke ();
 
@@ -289,7 +302,7 @@ namespace MonoDevelop.Components
 				cr.MoveTo (x, rectangle.Y + 0.5 + 2);
 				cr.RelLineTo (0, rectangle.Height - 1 - 4);
 				cr.ClosePath ();
-				cr.Color = (HslColor)parent.Style.Dark (StateType.Normal);
+				cr.SetSourceColor ((HslColor)parent.Style.Dark (StateType.Normal));
 				cr.LineWidth = 1;
 				cr.Stroke ();
 				return;
@@ -298,33 +311,35 @@ namespace MonoDevelop.Components
 			if (Active || HoverPosition.X >= 0) {
 				if (Active) {
 					cr.Rectangle (rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height);
-					Cairo.LinearGradient gr = new LinearGradient (rectangle.X, rectangle.Y, rectangle.X, rectangle.Y + rectangle.Height);
-					gr.AddColorStop (0, Tabstrip.ActiveGradientStart);
-					gr.AddColorStop (1, Tabstrip.ActiveGradientEnd);
-					cr.Pattern = gr;
+					using (var gr = new LinearGradient (rectangle.X, rectangle.Y, rectangle.X, rectangle.Y + rectangle.Height)) {
+						gr.AddColorStop (0, Tabstrip.ActiveGradientStart);
+						gr.AddColorStop (1, Tabstrip.ActiveGradientEnd);
+						cr.SetSource (gr);
+					}
 					cr.Fill ();
 					cr.Rectangle (rectangle.X + 0.5, rectangle.Y + 0.5, rectangle.Width - 1, rectangle.Height - 1);
-					cr.Color = new Cairo.Color (1, 1, 1, 0.05);
+					cr.SetSourceRGBA (1, 1, 1, 0.05);
 					cr.LineWidth = 1;
 					cr.Stroke ();
 				} else if (HoverPosition.X >= 0) {
 					cr.Rectangle (rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height);
-					Cairo.LinearGradient gr = new LinearGradient (rectangle.X, rectangle.Y, rectangle.X, rectangle.Y + rectangle.Height);
-					var c1 = Tabstrip.ActiveGradientStart;
-					var c2 = Tabstrip.ActiveGradientEnd;
-					c1.A = 0.2;
-					c2.A = 0.2;
-					gr.AddColorStop (0, c1);
-					gr.AddColorStop (1, c2);
-					cr.Pattern = gr;
+					using (var gr = new LinearGradient (rectangle.X, rectangle.Y, rectangle.X, rectangle.Y + rectangle.Height)) {
+						var c1 = Tabstrip.ActiveGradientStart;
+						var c2 = Tabstrip.ActiveGradientEnd;
+						c1.A = 0.2;
+						c2.A = 0.2;
+						gr.AddColorStop (0, c1);
+						gr.AddColorStop (1, c2);
+						cr.SetSource (gr);
+					}
 					cr.Fill ();
 				}
 			}
 			
 			if (Active)
-				cr.Color = new Cairo.Color (1, 1, 1);
+				cr.SetSourceRGB (1, 1, 1);
 			else
-				cr.Color = parent.Style.Text (StateType.Normal).ToCairoColor ();
+				cr.SetSourceColor (parent.Style.Text (StateType.Normal).ToCairoColor ());
 
 			cr.MoveTo (rectangle.X + (rectangle.Width - w) / 2, (rectangle.Height - h) / 2);
 			Pango.CairoHelper.ShowLayout (cr, layout);

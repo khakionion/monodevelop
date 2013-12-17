@@ -101,7 +101,9 @@ namespace MonoDevelop.Ide.Gui
 		[CommandHandler (FileCommands.OpenContainingFolder)]
 		protected void OnOpenContainingFolder ()
 		{
-			DesktopService.OpenFolder (doc.FileName.ParentDirectory);
+			// A tab will always hold a file, never a folder.
+			FilePath path = Path.GetDirectoryName (doc.FileName);
+			DesktopService.OpenFolder (path);
 		}
 
 		[CommandUpdateHandler (FileCommands.OpenContainingFolder)]

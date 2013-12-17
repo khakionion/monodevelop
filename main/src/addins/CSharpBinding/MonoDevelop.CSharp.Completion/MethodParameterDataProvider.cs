@@ -85,7 +85,7 @@ namespace MonoDevelop.CSharp.Completion
 			methods.Add (method);
 		}
 		
-		protected static int MethodComparer (IMethod left, IMethod right)
+		protected internal static int MethodComparer (IMethod left, IMethod right)
 		{
 			bool lObs = left.IsObsolete ();
 			bool rObs = right.IsObsolete ();
@@ -102,9 +102,17 @@ namespace MonoDevelop.CSharp.Completion
 					return 1;
 				if (!left.Parameters.Any (p => p.IsParams) && right.Parameters.Any (p => p.IsParams))
 					return -1;
-				var cnt = left.Parameters.Where (p => !p.IsOptional).Count () - right.Parameters.Where (p => !p.IsOptional).Count ();
+				var cnt = left.Parameters.Count (p => !p.IsOptional) - right.Parameters.Count (p => !p.IsOptional);
 				if (cnt == 0)
-					cnt = left.Parameters.Where (p => p.IsOptional).Count () - right.Parameters.Where (p => p.IsOptional).Count ();
+					cnt = left.Parameters.Count (p => p.IsOptional) - right.Parameters.Count (p => p.IsOptional);
+				if (cnt == 0) {
+					for (int i = 0; i < left.Parameters.Count; i++) {
+						if (left.Parameters [i].Type.Name == "NSDictionary" && right.Parameters [i].Type.Name != "NSDictionary")
+							return 1;
+						if (right.Parameters [i].Type.Name == "NSDictionary" && left.Parameters [i].Type.Name != "NSDictionary")
+							return -1;
+					}
+				}
 				return cnt;
 			}
 			return lstate.CompareTo (rstate);

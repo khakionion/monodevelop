@@ -46,7 +46,7 @@ namespace MonoDevelop.Ide
 		Label modeLabel;
 		Label cursorLabel;
 		MiniButton feedbackButton;
-		Gtk.Widget resizeGrip = new Gtk.Label ("");
+		Gtk.EventBox resizeGrip = new Gtk.EventBox ();
 
 		const int ResizeGripWidth = 14;
 
@@ -91,7 +91,7 @@ namespace MonoDevelop.Ide
 			// Feedback button
 			
 			if (FeedbackService.Enabled) {
-				CustomFrame fr = new CustomFrame (0, 0, 1, 1);
+				CustomFrame fr = new CustomFrame (0, 0, 1, 0);
 				Gdk.Pixbuf px = Gdk.Pixbuf.LoadFromResource ("balloon.png");
 				HBox b = new HBox (false, 3);
 				b.PackStart (new Gtk.Image (px));
@@ -110,27 +110,41 @@ namespace MonoDevelop.Ide
 				feedbackButton.ClickOnRelease = true;
 				FeedbackService.FeedbackPositionGetter = delegate {
 					int x, y;
-					feedbackButton.GdkWindow.GetOrigin (out x, out y);
-					x += feedbackButton.Allocation.Width;
-					y -= 6;
+					if (feedbackButton.GdkWindow != null) {
+						feedbackButton.GdkWindow.GetOrigin (out x, out y);
+						x += feedbackButton.Allocation.Width;
+						y -= 6;
+					} else {
+						x = y = -1;
+					}
 					return new Gdk.Point (x, y);
 				};
 			}
 			
 			// Dock area
 			
+			CustomFrame dfr = new CustomFrame (0, 0, 1, 0);
+			dfr.ShowAll ();
 			DefaultWorkbench wb = (DefaultWorkbench)IdeApp.Workbench.RootWindow;
 			var dockBar = wb.DockFrame.ExtractDockBar (PositionType.Bottom);
 			dockBar.AlignToEnd = true;
 			dockBar.ShowBorder = false;
 			dockBar.NoShowAll = true;
-			mainBox.PackStart (dockBar, false, false, 0);
+			dfr.Add (dockBar);
+			mainBox.PackStart (dfr, false, false, 0);
 
 			// Resize grip
 
 			resizeGrip.WidthRequest = ResizeGripWidth;
 			resizeGrip.HeightRequest = 0;
+			resizeGrip.VisibleWindow = false;
 			mainBox.PackStart (resizeGrip, false, false, 0);
+
+			resizeGrip.ButtonPressEvent += delegate (object o, ButtonPressEventArgs args) {
+				if (args.Event.Button == 1) {
+					GdkWindow.BeginResizeDrag (Gdk.WindowEdge.SouthEast, (int)args.Event.Button, (int)args.Event.XRoot, (int)args.Event.YRoot, args.Event.Time);
+				}
+			};
 
 			// Status panels
 

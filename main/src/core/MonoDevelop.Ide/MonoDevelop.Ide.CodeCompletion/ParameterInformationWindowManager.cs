@@ -123,6 +123,11 @@ namespace MonoDevelop.Ide.CodeCompletion
 			// Refresh.
 			UpdateWindow (ext, widget);
 		}
+
+		public static void RepositionWindow (CompletionTextEditorExtension ext, ICompletionWidget widget)
+		{
+			UpdateWindow (ext, widget);
+		}
 		
 		public static void ShowWindow (CompletionTextEditorExtension ext, ICompletionWidget widget, CodeCompletionContext ctx, ParameterDataProvider provider)
 		{
@@ -220,8 +225,8 @@ namespace MonoDevelop.Ide.CodeCompletion
 			
 			if (methods.Count == 0) {
 				if (window != null) {
-//					window.HideParameterInfo ();
-					DestroyWindow ();
+					window.HideParameterInfo ();
+//					DestroyWindow ();
 					wasAbove = false;
 					wasVisi = false;
 					lastW = -1;

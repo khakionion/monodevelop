@@ -33,7 +33,6 @@ using Mono.TextEditor;
 using MonoDevelop.Ide;
 using System.Threading;
 using MonoDevelop.Core;
-using System.Text.RegularExpressions;
 using System.Text;
 using MonoDevelop.Components.Commands;
 
@@ -101,15 +100,27 @@ namespace MonoDevelop.VersionControl.Views
 			this.info = info;
 			var sourceEditor = info.Document.GetContent<MonoDevelop.SourceEditor.SourceEditorView> ();
 			
-			vAdjustment = new Adjustment (0, 0, 0, 0, 0, 0);
+			vAdjustment = new Adjustment (
+				sourceEditor.TextEditor.VAdjustment.Value, 
+				sourceEditor.TextEditor.VAdjustment.Lower, 
+				sourceEditor.TextEditor.VAdjustment.Upper, 
+				sourceEditor.TextEditor.VAdjustment.StepIncrement, 
+				sourceEditor.TextEditor.VAdjustment.PageIncrement, 
+				sourceEditor.TextEditor.VAdjustment.PageSize);
 			vAdjustment.Changed += HandleAdjustmentChanged;
 			
 			vScrollBar = new VScrollbar (vAdjustment);
 			AddChild (vScrollBar);
 			
-			hAdjustment = new Adjustment (0, 0, 0, 0, 0, 0);
+			hAdjustment = new Adjustment (
+				sourceEditor.TextEditor.HAdjustment.Value, 
+				sourceEditor.TextEditor.HAdjustment.Lower, 
+				sourceEditor.TextEditor.HAdjustment.Upper, 
+				sourceEditor.TextEditor.HAdjustment.StepIncrement, 
+				sourceEditor.TextEditor.HAdjustment.PageIncrement, 
+				sourceEditor.TextEditor.HAdjustment.PageSize);
 			hAdjustment.Changed += HandleAdjustmentChanged;
-			
+
 			hScrollBar = new HScrollbar (hAdjustment);
 			AddChild (hScrollBar);
 			
@@ -177,7 +188,7 @@ namespace MonoDevelop.VersionControl.Views
 				children.ForEach (child => callback (child.Child));
 		}
 		
-		public void AddChild (Gtk.Widget child)
+		void AddChild (Gtk.Widget child)
 		{
 			child.Parent = this;
 			children.Add (new ContainerChild (this, child));
@@ -205,8 +216,14 @@ namespace MonoDevelop.VersionControl.Views
 		protected override void OnDestroyed ()
 		{
 			base.OnDestroyed ();
-			children.ForEach (child => child.Child.Destroy ());
-			children.Clear ();
+			hScrollBar.Destroy ();
+			hAdjustment.Destroy ();
+
+			vScrollBar.Destroy ();
+			vAdjustment.Destroy ();
+
+			editor.Destroy ();
+			overview.Destroy ();
 		}
 		 
 		protected override void OnSizeAllocated (Rectangle allocation)
@@ -276,7 +293,7 @@ namespace MonoDevelop.VersionControl.Views
 					if (ann != null && overview.highlightAnnotation.Revision == ann.Revision && curStart <= overview.highlightPositon && overview.highlightPositon < curY) {
 					} else {
 						cr.Rectangle (Editor.TextViewMargin.XOffset, curStart + cr.LineWidth, Editor.Allocation.Width - Editor.TextViewMargin.XOffset, curY - curStart - cr.LineWidth);
-						cr.Color = new Cairo.Color (color.Red / (double)ushort.MaxValue, 
+						cr.SetSourceRGBA (color.Red / (double)ushort.MaxValue,
 							color.Green / (double)ushort.MaxValue,
 							color.Blue / (double)ushort.MaxValue,
 							0.1);
@@ -288,10 +305,10 @@ namespace MonoDevelop.VersionControl.Views
 					cr.MoveTo (Editor.TextViewMargin.XOffset, curY + 0.5);
 					cr.LineTo (Editor.Allocation.Width, curY + 0.5);
 					
-					cr.Color = new Cairo.Color (color.Red / (double)ushort.MaxValue, 
-					                            color.Green / (double)ushort.MaxValue,
-					                            color.Blue / (double)ushort.MaxValue,
-					                            0.2);
+					cr.SetSourceRGBA (color.Red / (double)ushort.MaxValue,
+						color.Green / (double)ushort.MaxValue,
+						color.Blue / (double)ushort.MaxValue,
+						0.2);
 					cr.Stroke ();
 				}
 			}
@@ -340,7 +357,7 @@ namespace MonoDevelop.VersionControl.Views
 			for (int i = 1; i <= doc.LineCount; i++) {
 				string text = doc.GetLineText (i).Trim ();
 				int idx = text.IndexOf (':');
-				if (text.StartsWith ("*") && idx >= 0 && idx < text.Length - 1) {
+				if (text.StartsWith ("*", StringComparison.Ordinal) && idx >= 0 && idx < text.Length - 1) {
 					int offset = doc.GetLine (i).EndOffsetIncludingDelimiter;
 					msg = text.Substring (idx + 1) + doc.GetTextAt (offset, doc.TextLength - offset);
 					break;
@@ -358,15 +375,19 @@ namespace MonoDevelop.VersionControl.Views
 			Pango.Layout layout;
 
 			double dragPosition = -1;
+
+			TextDocument document;
+
 			public BlameRenderer (BlameWidget widget)
 			{
 				this.widget = widget;
 				widget.info.Updated += delegate { QueueDraw (); };
 				annotations = new List<Annotation> ();
-				UpdateAnnotations (null, null);
+				UpdateAnnotations ();
 	//			widget.Document.Saved += UpdateAnnotations;
-				widget.Editor.Document.TextReplacing += EditorDocumentTextReplacing;
-				widget.Editor.Document.LineChanged += EditorDocumentLineChanged;
+				document = widget.Editor.Document;
+				document.TextReplacing += EditorDocumentTextReplacing;
+				document.LineChanged += EditorDocumentLineChanged;
 				widget.vScrollBar.ValueChanged += delegate {
 					QueueDraw ();
 				};
@@ -388,8 +409,11 @@ namespace MonoDevelop.VersionControl.Views
 			{
 				base.OnDestroyed ();
 //				widget.Document.Saved -= UpdateAnnotations;
-				widget.Editor.Document.TextReplacing -= EditorDocumentTextReplacing;
-				widget.Editor.Document.LineChanged -= EditorDocumentLineChanged;
+				if (document != null) { 
+					document.TextReplacing -= EditorDocumentTextReplacing;
+					document.LineChanged -= EditorDocumentLineChanged;
+					document = null;
+				}
 				if (layout != null) {
 					layout.Dispose ();
 					layout = null;
@@ -413,8 +437,8 @@ namespace MonoDevelop.VersionControl.Views
 				int startLine = widget.Editor.YToLine (widget.Editor.VAdjustment.Value + evnt.Y);
 				var ann = startLine > 0 && startLine <= annotations.Count ? annotations[startLine - 1] : null;
 				if (ann != null)
-					TooltipText = GetCommitMessage (startLine);
-				
+					TooltipText = GetCommitMessage (startLine, true);
+
 				highlightPositon = evnt.Y;
 				if (highlightAnnotation != ann) {
 					highlightAnnotation = ann;
@@ -520,7 +544,7 @@ namespace MonoDevelop.VersionControl.Views
 			/// <summary>
 			/// Reloads annotations for the current document
 			/// </summary>
-			internal void UpdateAnnotations (object sender, EventArgs e)
+			internal void UpdateAnnotations ()
 			{
 				StatusBarContext ctx = IdeApp.Workbench.StatusBar.CreateContext ();
 				ctx.AutoPulse = true;
@@ -589,7 +613,7 @@ namespace MonoDevelop.VersionControl.Views
 						}
 				} else if (startLine > endLine) {
 					// revert
-					UpdateAnnotations (null, null);
+					UpdateAnnotations ();
 					return;
 				}
 				
@@ -608,13 +632,15 @@ namespace MonoDevelop.VersionControl.Views
 			/// <summary>
 			/// Gets the commit message matching a given annotation index.
 			/// </summary>
-			internal string GetCommitMessage (int index)
+			internal string GetCommitMessage (int index, bool tooltip)
 			{
 				Annotation annotation = (index < annotations.Count)? annotations[index]: null;
 				var history = widget.info.History;
 				if (null != history && annotation != null) {
 					foreach (Revision rev in history) {
 						if (rev.ToString () == annotation.Revision) {
+							if (tooltip && annotation.HasEmail)
+								return String.Format ("Email: {0}{1}{2}", annotation.Email, Environment.NewLine, rev.Message);
 							return rev.Message;
 						}
 					}
@@ -646,7 +672,7 @@ namespace MonoDevelop.VersionControl.Views
 				string truncated = revision.Substring (0, initalLength);
 				var history = widget.info.History;
 				if (history != null) {
-					bool isMisleadingMatch = history.Select (r => r.ToString ()).Any (rev => rev != revision && rev.StartsWith (truncated));
+					bool isMisleadingMatch = history.Select (r => r.ToString ()).Any (rev => rev != revision && rev.StartsWith (truncated, StringComparison.Ordinal));
 					if (isMisleadingMatch)
 						truncated = TruncRevision (revision, initalLength + 1);
 				}
@@ -658,7 +684,7 @@ namespace MonoDevelop.VersionControl.Views
 				int tmpwidth, height, width = 120;
 				int dateTimeLength = -1;
 				foreach (Annotation note in annotations) {
-					if (!string.IsNullOrEmpty (note.Author)) { 
+					if (!String.IsNullOrEmpty (note.Author)) { 
 						if (dateTimeLength < 0 && note.HasDate) {
 							layout.SetText (note.Date.ToShortDateString ());
 							layout.GetPixelSize (out dateTimeLength, out height);
@@ -682,7 +708,7 @@ namespace MonoDevelop.VersionControl.Views
 					cr.LineWidth = Math.Max (1.0, widget.Editor.Options.Zoom);
 					
 					cr.Rectangle (leftSpacer, 0, Allocation.Width, Allocation.Height);
-					cr.Color = new Cairo.Color (0.95, 0.95, 0.95);
+					cr.SetSourceRGB (0.95, 0.95, 0.95);
 					cr.Fill ();
 					
 					int startLine = widget.Editor.YToLine ((int)widget.Editor.VAdjustment.Value);
@@ -697,35 +723,61 @@ namespace MonoDevelop.VersionControl.Views
 						double curStart = curY;
 //						widget.JumpOverFoldings (ref line);
 						int lineStart = line;
-						int w = 0, w2 = 0, h = 16;
+						int authorWidth = 0, revisionWidth = 0, dateWidth = 0, h = 16;
 						Annotation ann = line <= annotations.Count ? annotations[line - 1] : null;
 						if (ann != null) {
 							do {
 								widget.JumpOverFoldings (ref line);
 								line++;
 							} while (line <= annotations.Count && annotations[line - 1] != null && annotations[line - 1].Revision == ann.Revision);
+
 							double nextY = widget.editor.LineToY (line) - widget.editor.VAdjustment.Value;
 							if (highlightAnnotation != null && highlightAnnotation.Revision == ann.Revision && curStart <= highlightPositon && highlightPositon < nextY) {
 								cr.Rectangle (leftSpacer, curStart + cr.LineWidth, Allocation.Width - leftSpacer, nextY - curStart - cr.LineWidth);
-								cr.Color = new Cairo.Color (1, 1, 1);
+								cr.SetSourceRGB (1, 1, 1);
 								cr.Fill ();
 							}
-							layout.SetText (ann.Author);
-							layout.GetPixelSize (out w, out h);
-							e.Window.DrawLayout (Style.BlackGC, leftSpacer + margin, (int)(curY + (widget.Editor.LineHeight - h) / 2), layout);
-							
-							
-							layout.SetText (TruncRevision (ann.Revision));
-							layout.GetPixelSize (out w2, out h);
-							e.Window.DrawLayout (Style.BlackGC, Allocation.Width - w2 - margin, (int)(curY + (widget.Editor.LineHeight - h) / 2), layout);
 
+							// use a fixed size revision to get a approx. revision width
+							layout.SetText ("88888888");
+							layout.GetPixelSize (out revisionWidth, out h);
+							layout.SetText (TruncRevision (ann.Revision));
+							e.Window.DrawLayout (Style.BlackGC, Allocation.Width - revisionWidth - margin, (int)(curY + (widget.Editor.LineHeight - h) / 2), layout);
+
+							const int dateRevisionSpacing = 16;
 							if (ann.HasDate) {
 								string dateTime = ann.Date.ToShortDateString ();
-								int middle = w + (Allocation.Width - margin * 2 - leftSpacer - w - w2) / 2;
+								// use a fixed size date to get a approx. date width
+								layout.SetText (new DateTime (1999, 10, 10).ToShortDateString ());
+								layout.GetPixelSize (out dateWidth, out h);
 								layout.SetText (dateTime);
-								layout.GetPixelSize (out w, out h);
-								e.Window.DrawLayout (Style.BlackGC, leftSpacer + margin + middle - w / 2, (int)(curY + (widget.Editor.LineHeight - h) / 2), layout);
+								e.Window.DrawLayout (Style.BlackGC, Allocation.Width - revisionWidth - margin - revisionWidth - dateRevisionSpacing, (int)(curY + (widget.Editor.LineHeight - h) / 2), layout);
 							}
+
+							using (var authorLayout = PangoUtil.CreateLayout (this)) {
+								var description = Pango.FontDescription.FromString ("Tahoma " + (int)(10 * widget.Editor.Options.Zoom));
+								authorLayout.FontDescription = description;
+								authorLayout.SetText (ann.Author);
+								authorLayout.GetPixelSize (out authorWidth, out h);
+
+								var maxWidth = Allocation.Width - revisionWidth - margin - revisionWidth - dateRevisionSpacing;
+				/*				if (authorWidth > maxWidth) {
+									int idx = ann.Author.IndexOf ('<');
+									if (idx > 0)
+										authorLayout.SetText (ann.Author.Substring (0, idx) + Environment.NewLine + ann.Author.Substring (idx));
+									authorLayout.GetPixelSize (out authorWidth, out h);
+								}*/
+
+								cr.Save ();
+								cr.Rectangle (0, 0, maxWidth, Allocation.Height); 
+								cr.Clip ();
+								cr.Translate (leftSpacer + margin, (int)(curY + (widget.Editor.LineHeight - h) / 2)); 
+								cr.SetSourceRGB (0, 0, 0);
+								cr.ShowLayout (authorLayout);
+								cr.ResetClip ();
+								cr.Restore ();
+							}
+
 							curY = nextY;
 						} else {
 							curY += widget.Editor.GetLineHeight (line);
@@ -734,9 +786,10 @@ namespace MonoDevelop.VersionControl.Views
 						}
 						
 						if (ann != null && line - lineStart > 1) {
-							string msg = GetCommitMessage (lineStart);
+							string msg = GetCommitMessage (lineStart, false);
 							if (!string.IsNullOrEmpty (msg)) {
 								msg = FormatMessage (msg);
+
 								layout.SetText (msg);
 								layout.Width = (int)(Allocation.Width * Pango.Scale.PangoScale);
 								using (var gc = new Gdk.GC (e.Window)) {
@@ -760,16 +813,16 @@ namespace MonoDevelop.VersionControl.Views
 							HslColor color = new Cairo.Color (0.90, 0.90, 1);
 							color.L = 0.4 + a / 2;
 							color.S = 1 - a / 2;
-							cr.Color = color;
+							cr.SetSourceColor (color);
 						} else {
-							cr.Color = ann != null ? new Cairo.Color (1, 1, 0) : new Cairo.Color (0.95, 0.95, 0.95);
+							cr.SetSourceColor (ann != null ? new Cairo.Color (1, 1, 0) : new Cairo.Color (0.95, 0.95, 0.95));
 						}
 						cr.Fill ();
 
 						if (ann != null) {
 							cr.MoveTo (0, curY + 0.5);
 							cr.LineTo (Allocation.Width, curY + 0.5);
-							cr.Color = new Cairo.Color (0.6, 0.6, 0.6);
+							cr.SetSourceRGB (0.6, 0.6, 0.6);
 							cr.Stroke ();
 						}
 					}

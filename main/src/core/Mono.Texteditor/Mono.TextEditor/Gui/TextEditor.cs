@@ -142,8 +142,7 @@ namespace Mono.TextEditor
 		protected override void OnSizeAllocated (Rectangle allocation)
 		{
 			base.OnSizeAllocated (allocation);
-			if (textArea.Allocation != allocation)
-				textArea.SizeAllocate (allocation);
+			CurrentMode.AllocateTextArea (this, textArea, allocation);
 			SetChildrenPositions (allocation);
 		}
 
@@ -245,7 +244,9 @@ namespace Mono.TextEditor
 		
 		protected override void ForAll (bool include_internals, Gtk.Callback callback)
 		{
-			containerChildren.ForEach (child => callback (child.Child));
+			foreach (var child in containerChildren.ToArray ()) {
+				callback (child.Child);
+			}
 		}
 
 		void ResizeChild (Rectangle allocation, EditorContainerChild child)
@@ -442,6 +443,12 @@ namespace Mono.TextEditor
 			}
 		}
 
+		public ActionMargin ActionMargin {
+			get {
+				return textArea.ActionMargin;
+			}
+		}
+
 		public Margin IconMargin {
 			get { return textArea.IconMargin; }
 		}
@@ -523,17 +530,17 @@ namespace Mono.TextEditor
 
 		public void ClearTooltipProviders ()
 		{
-			textArea.ClearTooltipProviders ();
+			GetTextEditorData ().ClearTooltipProviders ();
 		}
 		
 		public void AddTooltipProvider (TooltipProvider provider)
 		{
-			textArea.AddTooltipProvider (provider);
+			GetTextEditorData ().AddTooltipProvider (provider);
 		}
 		
 		public void RemoveTooltipProvider (TooltipProvider provider)
 		{
-			textArea.RemoveTooltipProvider (provider);
+			GetTextEditorData ().RemoveTooltipProvider (provider);
 		}
 
 		internal void RedrawMargin (Margin margin)
@@ -584,14 +591,19 @@ namespace Mono.TextEditor
 			}
 		}
 
+		internal bool UpdatePreeditLineHeight ()
+		{
+			return textArea.UpdatePreeditLineHeight ();
+		}
+
 		internal void ResetIMContext ()
 		{
 			textArea.ResetIMContext ();
 		}
 
-		internal bool ContainsPreedit (int line, int length)
+		internal bool ContainsPreedit (int offset, int length)
 		{
-			return textArea.ContainsPreedit (line, length);
+			return textArea.ContainsPreedit (offset, length);
 		}
 
 		internal void FireLinkEvent (string link, uint button, ModifierType modifierState)
@@ -846,9 +858,9 @@ namespace Mono.TextEditor
 			}
 		}
 
-		public void HideTooltip ()
+		public void HideTooltip (bool checkMouseOver = true)
 		{
-			textArea.HideTooltip ();
+			textArea.HideTooltip (checkMouseOver);
 		}
 		public Action<Gdk.EventButton> DoPopupMenu {
 			get {
@@ -884,11 +896,6 @@ namespace Mono.TextEditor
 			remove { textArea.LinkRequest -= value; }
 		}
 
-		internal List<TooltipProvider> tooltipProviders {
-			get {
-				return textArea.tooltipProviders;
-			}
-		}
 		public void ShowListWindow<T> (ListWindow<T> window, DocumentLocation loc)
 		{
 			textArea.ShowListWindow<T> (window, loc);
@@ -1098,7 +1105,7 @@ namespace Mono.TextEditor
 		/// <summary>
 		/// Initiate a pulse at the specified document location
 		/// </summary>
-		/// <param name="pulseLocation">
+		/// <param name="pulseStart">
 		/// A <see cref="DocumentLocation"/>
 		/// </param>
 		public void PulseCharacter (DocumentLocation pulseStart)
@@ -1223,7 +1230,11 @@ namespace Mono.TextEditor
 		{
 			textArea.SetCaretTo (line, column, highlight, centerCaret);
 		}
-		
+		public event EventHandler BeginHover {
+			add { textArea.BeginHover += value; }
+			remove { textArea.BeginHover -= value; }
+		}
+
 	}
 }
 

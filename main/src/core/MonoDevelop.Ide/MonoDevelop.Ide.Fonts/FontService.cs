@@ -75,7 +75,8 @@ namespace MonoDevelop.Ide.Fonts
 
 		static FontDescription LoadFont (string name)
 		{
-			return Pango.FontDescription.FromString (FilterFontName (name));
+			var fontName = FilterFontName (name);
+			return Pango.FontDescription.FromString (fontName);
 		}
 		
 		public static string FilterFontName (string name)
@@ -88,7 +89,6 @@ namespace MonoDevelop.Ide.Fonts
 				label.Destroy ();
 				return result;
 			}
-			
 			return name;
 		}
 		
@@ -138,10 +138,17 @@ namespace MonoDevelop.Ide.Fonts
 		{
 			if (loadedFonts.ContainsKey (name)) 
 				loadedFonts.Remove (name);
-			fontProperties.Set (name, value);
-			
-			if (fontChangeCallbacks.ContainsKey (name)) 
-				fontChangeCallbacks [name].ForEach (c => c ());
+
+			var font = GetFont (name);
+			if (font != null && font.FontDescription == value) {
+				fontProperties.Set (name, null);
+			} else {
+				fontProperties.Set (name, value);
+			}
+			List<Action> callbacks;
+			if (fontChangeCallbacks.TryGetValue (name, out callbacks)) {
+				callbacks.ForEach (c => c ());
+			}
 		}
 		
 		static Dictionary<string, List<Action>> fontChangeCallbacks = new Dictionary<string, List<Action>> ();
@@ -154,7 +161,7 @@ namespace MonoDevelop.Ide.Fonts
 		
 		public static void RemoveCallback (Action callback)
 		{
-			foreach (var list in fontChangeCallbacks.Values)
+			foreach (var list in fontChangeCallbacks.Values.ToList ())
 				list.Remove (callback);
 		}
 	}

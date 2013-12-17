@@ -93,7 +93,7 @@ namespace MonoDevelop.GtkCore
 
 		void OnFileEvent (object o, ProjectFileEventArgs args)
 		{
-			if (!IdeApp.Workspace.IsOpen || !File.Exists (ObjectsFile))
+			if (!IdeApp.IsInitialized || !IdeApp.Workspace.IsOpen || !File.Exists (ObjectsFile))
 				return;
 
 			UpdateObjectsFile ();
@@ -195,6 +195,9 @@ namespace MonoDevelop.GtkCore
 
 		public static bool SupportsDesigner (Project project)
 		{
+			if (!string.IsNullOrEmpty (Environment.GetEnvironmentVariable ("DISABLE_STETIC"))) {
+				return false;
+			}
 			DotNetProject dnp = project as DotNetProject;
 			return dnp != null && HasGtkReference (dnp) && SupportsRefactoring (dnp);
 		}
@@ -235,7 +238,6 @@ namespace MonoDevelop.GtkCore
 			try {
 				FileInfo fi = new FileInfo (SteticFile);
 				fi.LastWriteTime = DateTime.Now;
-				project.SetNeedsBuilding (true);
 			} catch {
 				// Ignore errors here
 			}

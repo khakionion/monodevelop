@@ -45,7 +45,7 @@ using System.Threading;
 namespace MonoDevelop.CSharp.Refactoring
 {
 	using MonoDevelop.Projects;
-	public class CSharpReferenceFinder : ReferenceFinder
+	class CSharpReferenceFinder : ReferenceFinder
 	{
 		ICSharpCode.NRefactory.CSharp.Resolver.FindReferences refFinder = new ICSharpCode.NRefactory.CSharp.Resolver.FindReferences ();
 		List<object> searchedMembers;
@@ -81,6 +81,8 @@ namespace MonoDevelop.CSharp.Refactoring
 				memberName = ((IVariable)firstMember).Name;
 			if (firstMember is ITypeParameter)
 				memberName = ((ITypeParameter)firstMember).Name;
+			if (firstMember is INamespace)
+				memberName = ((INamespace)firstMember).Name;
 		}
 		
 		void SetPossibleFiles (IEnumerable<FilePath> files)
@@ -95,11 +97,11 @@ namespace MonoDevelop.CSharp.Refactoring
 			}
 		}
 		
-		MemberReference GetReference (ResolveResult result, AstNode node, string fileName, Mono.TextEditor.TextEditorData editor)
+		MemberReference GetReference (Project project, ResolveResult result, AstNode node, SyntaxTree syntaxTree, string fileName, Mono.TextEditor.TextEditorData editor)
 		{
-			if (result == null) {
+			AstNode originalNode = node;
+			if (result == null)
 				return null;
-			}
 
 			object valid = null;
 			if (result is MethodGroupResolveResult) {
@@ -110,21 +112,22 @@ namespace MonoDevelop.CSharp.Refactoring
 				valid = searchedMembers.FirstOrDefault (
 					member => member is IMember && ((IMember)member).Region == foundMember.Region);
 			} else if (result is NamespaceResolveResult) {
-				var ns = ((NamespaceResolveResult)result).NamespaceName;
-				valid = searchedMembers.FirstOrDefault (n => n is string && n.ToString () == ns);
+				var ns = ((NamespaceResolveResult)result).Namespace;
+				valid = searchedMembers.FirstOrDefault (n => n is INamespace && ns.FullName.StartsWith (((INamespace)n).FullName, StringComparison.Ordinal));
+				if (!(node is NamespaceDeclaration))
+					goto skip;
 			} else if (result is LocalResolveResult) {
 				var ns = ((LocalResolveResult)result).Variable;
 				valid = searchedMembers.FirstOrDefault (n => n is IVariable && ((IVariable)n).Region == ns.Region);
 			} else if (result is TypeResolveResult) {
 				valid = searchedMembers.FirstOrDefault (n => n is IType);
-			} else {
-				valid = searchedMembers.FirstOrDefault ();
 			}
 			if (node is ConstructorInitializer)
 				return null;
-
 			if (node is ObjectCreateExpression)
 				node = ((ObjectCreateExpression)node).Type;
+			if (node is IndexerDeclaration)
+				node = ((IndexerDeclaration)node).ThisToken;
 
 			if (node is InvocationExpression)
 				node = ((InvocationExpression)node).Target;
@@ -132,9 +135,19 @@ namespace MonoDevelop.CSharp.Refactoring
 			if (node is MemberReferenceExpression)
 				node = ((MemberReferenceExpression)node).MemberNameToken;
 			
+			if (node is SimpleType)
+				node = ((SimpleType)node).IdentifierToken;
+
 			if (node is MemberType)
 				node = ((MemberType)node).MemberNameToken;
 			
+			if (node is NamespaceDeclaration) {
+				var nsd = ((NamespaceDeclaration)node);
+				node = nsd.NamespaceName;
+				if (node == null)
+					return null;
+			}
+
 			if (node is TypeDeclaration && (searchedMembers.First () is IType)) 
 				node = ((TypeDeclaration)node).NameToken;
 			if (node is DelegateDeclaration) 
@@ -160,10 +173,75 @@ namespace MonoDevelop.CSharp.Refactoring
 				node = ((IdentifierExpression)node).IdentifierToken;
 			}
 
+		skip:
+
 			var region = new DomRegion (fileName, node.StartLocation, node.EndLocation);
 
 			var length = node is PrimitiveType ? keywordName.Length : node.EndLocation.Column - node.StartLocation.Column;
-			return new MemberReference (valid, region, editor.LocationToOffset (region.Begin), length);
+			if (valid == null)
+				valid = searchedMembers.FirstOrDefault ();
+			var reference = new CSharpMemberReference (project, originalNode, syntaxTree, valid, region, editor.LocationToOffset (region.Begin), length);
+
+			reference.ReferenceUsageType = GetUsage (originalNode);
+			return reference;
+		}
+
+		// same logic than the extract method analyzation, unfortunately it's not reusable in this context 
+		// we need to do it bottom up here.
+		ReferenceUsageType GetUsage (AstNode node)
+		{
+			if (node.Parent is UnaryOperatorExpression) {
+				var unaryOperatorExpression = (UnaryOperatorExpression)node.Parent;
+				if (unaryOperatorExpression.Operator == UnaryOperatorType.Increment || 
+				    unaryOperatorExpression.Operator == UnaryOperatorType.Decrement ||
+					unaryOperatorExpression.Operator == UnaryOperatorType.PostIncrement || 
+				    unaryOperatorExpression.Operator == UnaryOperatorType.PostDecrement) {
+					return ReferenceUsageType.ReadWrite;
+				}
+			} else if (node.Parent is DirectionExpression) {
+				var de = (DirectionExpression)node.Parent;
+				if (de.FieldDirection == FieldDirection.Ref)
+					return ReferenceUsageType.ReadWrite;
+				if (de.FieldDirection == FieldDirection.Out)
+					return ReferenceUsageType.Write;
+			} else if (node.Parent is AssignmentExpression) {
+				var ae = (AssignmentExpression)node.Parent;
+				if (ae.Left == node)
+					return ReferenceUsageType.Write;
+			} else if (node is VariableInitializer) {
+				return ReferenceUsageType.Write;
+			} else if (node is ParameterDeclaration) {
+				return ReferenceUsageType.Write;
+			} else if (node.Parent is ForeachStatement) {
+				if (node.Role == Roles.Identifier)
+					return ReferenceUsageType.Write;
+			}
+			return ReferenceUsageType.Read;
+		}
+
+		public class CSharpMemberReference : MemberReference
+		{
+			public SyntaxTree SyntaxTree {
+				get;
+				private set;
+			}
+
+			public AstNode AstNode {
+				get;
+				private set;
+			}
+
+			public Project Project {
+				get;
+				private set;
+			}
+
+			public CSharpMemberReference (Project project, AstNode astNode, SyntaxTree syntaxTree,  object entity, DomRegion region, int offset, int length) : base (entity, region, offset, length)
+			{
+				this.Project = project;
+				this.AstNode = astNode;
+				this.SyntaxTree = syntaxTree;
+			}
 		}
 
 		bool IsNodeValid (object searchedMember, AstNode node)
@@ -186,41 +264,34 @@ namespace MonoDevelop.CSharp.Refactoring
 			var result = new List<MemberReference> ();
 			
 			foreach (var obj in searchedMembers) {
-				if (obj is IEntity) {
-					var entity = (IEntity)obj;
+				if (obj is IVariable && !(obj is IParameter) && !(obj is IField)) {
+					refFinder.FindLocalReferences ((IVariable)obj, file, unit, doc.Compilation, (astNode, r) => { 
+						if (IsNodeValid (obj, astNode))
+							result.Add (GetReference (doc.Project, r, astNode, unit, editor.FileName, editor));
+					}, CancellationToken.None);
+				} else if (obj is ISymbol) {
+					var sym = (ISymbol)obj;
 
 					// May happen for anonymous types since empty constructors are always generated.
 					// But there is no declaring type definition for them - we filter out this case.
-					if (entity.EntityType == EntityType.Constructor && entity.DeclaringTypeDefinition == null)
+					if (sym.SymbolKind == SymbolKind.Constructor && ((IEntity)sym).DeclaringTypeDefinition == null)
 						continue;
-
-					refFinder.FindReferencesInFile (refFinder.GetSearchScopes (entity), file, unit, doc.Compilation, (astNode, r) => {
+					refFinder.FindReferencesInFile (refFinder.GetSearchScopes (sym), file, unit, doc.Compilation, (astNode, r) => {
 						if (IsNodeValid (obj, astNode))
-							result.Add (GetReference (r, astNode, editor.FileName, editor)); 
-					}, CancellationToken.None);
-				} else if (obj is IVariable) {
-					refFinder.FindLocalReferences ((IVariable)obj, file, unit, doc.Compilation, (astNode, r) => { 
-						if (IsNodeValid (obj, astNode))
-							result.Add (GetReference (r, astNode, editor.FileName, editor));
-					}, CancellationToken.None);
-				} else if (obj is ITypeParameter) {
-					refFinder.FindTypeParameterReferences ((ITypeParameter)obj, file, unit, doc.Compilation, (astNode, r) => { 
-						if (IsNodeValid (obj, astNode))
-							result.Add (GetReference (r, astNode, editor.FileName, editor));
+							result.Add (GetReference (doc.Project, r, astNode, unit, editor.FileName, editor)); 
 					}, CancellationToken.None);
 				}
 			}
 			return result;
 		}
 		
-		public override IEnumerable<MemberReference> FindReferences (Project project, IProjectContent content, IEnumerable<FilePath> possibleFiles, IEnumerable<object> members)
+		public override IEnumerable<MemberReference> FindReferences (Project project, IProjectContent content, IEnumerable<FilePath> possibleFiles, IProgressMonitor monitor, IEnumerable<object> members)
 		{
 			if (content == null)
 				throw new ArgumentNullException ("content", "Project content not set.");
 			SetPossibleFiles (possibleFiles);
 			SetSearchedMembers (members);
-
-			var scopes = searchedMembers.Select (e => refFinder.GetSearchScopes (e as IEntity));
+			var scopes = searchedMembers.Select (e => e is INamespace ? refFinder.GetSearchScopes ((INamespace)e) : refFinder.GetSearchScopes ((ISymbol)e));
 			var compilation = project != null ? TypeSystemService.GetCompilation (project) : content.CreateCompilation ();
 			List<MemberReference> refs = new List<MemberReference> ();
 			foreach (var opendoc in openDocuments) {
@@ -230,8 +301,9 @@ namespace MonoDevelop.CSharp.Refactoring
 					refs.Add (newRef);
 				}
 			}
-			
 			foreach (var file in files) {
+				if (monitor != null)
+					monitor.Step (1);
 				string text = Mono.TextEditor.Utils.TextFileUtility.ReadAllText (file);
 				if (memberName != null && text.IndexOf (memberName, StringComparison.Ordinal) < 0 &&
 					(keywordName == null || text.IndexOf (keywordName, StringComparison.Ordinal) < 0))
@@ -262,7 +334,7 @@ namespace MonoDevelop.CSharp.Refactoring
 							unit,
 							compilation,
 							(astNode, result) => {
-								var newRef = GetReference (result, astNode, file, editor);
+								var newRef = GetReference (project, result, astNode, unit, file, editor);
 								if (newRef == null || refs.Any (r => r.FileName == newRef.FileName && r.Region == newRef.Region))
 									return;
 								refs.Add (newRef);

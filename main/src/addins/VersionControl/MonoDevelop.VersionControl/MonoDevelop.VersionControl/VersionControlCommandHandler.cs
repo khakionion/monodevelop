@@ -25,11 +25,8 @@
 //
 //
 
-using System;
 using MonoDevelop.Projects;
-using MonoDevelop.Components.Commands;
 using MonoDevelop.Ide.Gui.Components;
-using MonoDevelop.Ide.Gui.Pads;
 using MonoDevelop.Ide.Gui.Pads.ProjectPad;
 
 namespace MonoDevelop.VersionControl
@@ -52,7 +49,7 @@ namespace MonoDevelop.VersionControl
 			}
 		}
 		
-		public VersionControlItemList GetItems ()
+		public VersionControlItemList GetItems (bool projRecurse = true)
 		{
 			// Cached items are used only in the status view, not in the project pad.
 			if (items != null)
@@ -61,21 +58,21 @@ namespace MonoDevelop.VersionControl
 			// Don't cache node items because they can change
 			VersionControlItemList nodeItems = new VersionControlItemList ();
 			foreach (ITreeNavigator node in CurrentNodes) {
-				VersionControlItem item = CreateItem (node.DataItem);
+				VersionControlItem item = CreateItem (node.DataItem, projRecurse);
 				if (item != null)
 					nodeItems.Add (item);
 			}
 			return nodeItems;
 		}
 		
-		public VersionControlItem CreateItem (object obj)
+		public static VersionControlItem CreateItem (object obj, bool projRecurse = true)
 		{
 			string path;
 			bool isDir;
 			IWorkspaceObject pentry;
 			Repository repo;
 			VersionInfo versionInfo = null;
-			
+
 			if (obj is ProjectFile) {
 				ProjectFile file = (ProjectFile)obj;
 				path = file.FilePath;
@@ -97,10 +94,25 @@ namespace MonoDevelop.VersionControl
 				path = MonoDevelop.Core.FilePath.GetCommonRootPath (itemFiles);
 				isDir = (System.IO.Directory.Exists(path));
 			} else if (obj is ProjectFolder) {
-				ProjectFolder f = ((ProjectFolder)obj);
+				ProjectFolder f = (ProjectFolder)obj;
 				path = f.Path;
 				isDir = true;
 				pentry = f.ParentWorkspaceObject;
+			} else if (!projRecurse && obj is Solution) {
+				Solution sol = (Solution)obj;
+				path = sol.FileName;
+				isDir = false;
+				pentry = sol;
+			} else if (!projRecurse && obj is Project) {
+				Project proj = (Project)obj;
+				path = proj.FileName;
+				isDir = false;
+				pentry = proj;
+			} else if (!projRecurse && obj is UnknownSolutionItem) {
+				UnknownSolutionItem item = (UnknownSolutionItem)obj;
+				path = item.FileName;
+				isDir = false;
+				pentry = item;
 			} else if (obj is IWorkspaceObject) {
 				pentry = ((IWorkspaceObject)obj);
 				path = pentry.BaseDirectory;

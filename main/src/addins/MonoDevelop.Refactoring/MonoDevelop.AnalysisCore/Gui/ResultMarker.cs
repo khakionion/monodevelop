@@ -28,14 +28,16 @@ using Mono.TextEditor;
 using MonoDevelop.SourceEditor;
 using MonoDevelop.SourceEditor.QuickTasks;
 using ICSharpCode.NRefactory.CSharp;
+using ICSharpCode.NRefactory.Refactoring;
+using System.Collections.Generic;
 
 namespace MonoDevelop.AnalysisCore.Gui
 {
 	class ResultMarker : UnderlineTextSegmentMarker
 	{
-		Result result;
-		
-		public ResultMarker (Result result, TextSegment segment) : base (GetColor (result), segment)
+		readonly Result result;
+
+		public ResultMarker (Result result, TextSegment segment) : base ("", segment)
 		{
 			this.result = result;
 		}
@@ -53,19 +55,19 @@ namespace MonoDevelop.AnalysisCore.Gui
 		public int ColEnd   { get { return IsOneLine (result)? (result.Region.EndColumn) : 0; } }
 		public string Message { get { return result.Message; } }
 		
-		static string GetColor (Result result)
+		static Cairo.Color GetColor (TextEditor editor, Result result)
 		{
 			switch (result.Level) {
 			case Severity.None:
-				return Mono.TextEditor.Highlighting.ColorScheme.DefaultString;
+				return editor.ColorStyle.PlainText.Background;
 			case Severity.Error:
-				return Mono.TextEditor.Highlighting.ColorScheme.ErrorUnderlineString;
+				return editor.ColorStyle.UnderlineError.Color;
 			case Severity.Warning:
-				return Mono.TextEditor.Highlighting.ColorScheme.WarningUnderlineString;
+				return editor.ColorStyle.UnderlineWarning.Color;
 			case Severity.Suggestion:
-				return Mono.TextEditor.Highlighting.ColorScheme.SuggestionUnderlineString;
+				return editor.ColorStyle.UnderlineSuggestion.Color;
 			case Severity.Hint:
-				return Mono.TextEditor.Highlighting.ColorScheme.HintUnderlineString;
+				return editor.ColorStyle.UnderlineHint.Color;
 			default:
 				throw new System.ArgumentOutOfRangeException ();
 			}
@@ -98,13 +100,22 @@ namespace MonoDevelop.AnalysisCore.Gui
 			double drawTo;
 				
 			if (markerStart < startOffset && endOffset < markerEnd) {
-				drawFrom = startXPos;
 				drawTo = endXPos;
+				var line = editor.GetLineByOffset (startOffset);
+				int offset = line.GetIndentation (editor.Document).Length;
+				drawFrom = startXPos + (layout.IndexToPos (offset).X  / Pango.Scale.PangoScale);
 			} else {
-				int start = startOffset < markerStart ? markerStart : startOffset;
+				int start;
+				if (startOffset < markerStart) {
+					start = markerStart;
+				} else {
+					var line = editor.GetLineByOffset (startOffset);
+					int offset = line.GetIndentation (editor.Document).Length;
+					start = startOffset + offset;
+				}
 				int end = endOffset < markerEnd ? endOffset : markerEnd;
-				int /*lineNr,*/ x_pos;
-				
+				int x_pos;
+
 				x_pos = layout.IndexToPos (start - startOffset).X;
 				drawFrom = startXPos + (int)(x_pos / Pango.Scale.PangoScale);
 				x_pos = layout.IndexToPos (end - startOffset).X;
@@ -118,15 +129,23 @@ namespace MonoDevelop.AnalysisCore.Gui
 				return;
 			
 			double height = editor.LineHeight / 5;
-			cr.Color = ColorName == null ? Color : editor.ColorStyle.GetColorFromDefinition (ColorName);
+			cr.SetSourceColor (GetColor (editor, Result));
 			if (drawOverlay) {
 				cr.Rectangle (drawFrom, y, drawTo - drawFrom, editor.LineHeight);
-				var color = editor.ColorStyle.Default.CairoBackgroundColor;
+				var color = editor.ColorStyle.PlainText.Background;
 				color.A = 0.6;
-				cr.Color = color;
+				cr.SetSourceColor (color);
 				cr.Fill ();
-			} else if (Wave) {	
+			} else if (result.InspectionMark == IssueMarker.WavedLine) {	
 				Pango.CairoHelper.ShowErrorUnderline (cr, drawFrom, y + editor.LineHeight - height, drawTo - drawFrom, height);
+			} else if (result.InspectionMark == IssueMarker.DottedLine) {
+				cr.Save ();
+				cr.LineWidth = 1;
+				cr.MoveTo (drawFrom + 1, y + editor.LineHeight - 1 + 0.5);
+				cr.RelLineTo (System.Math.Min (drawTo - drawFrom, 4 * 3), 0);
+				cr.SetDash (new double[] { 2, 2 }, 0);
+				cr.Stroke ();
+				cr.Restore ();
 			} else {
 				cr.MoveTo (drawFrom, y + editor.LineHeight - 1);
 				cr.LineTo (drawTo, y + editor.LineHeight - 1);
@@ -146,20 +165,42 @@ namespace MonoDevelop.AnalysisCore.Gui
 		}
 
 		#region IChunkMarker implementation
-		void IChunkMarker.ChangeForeColor (TextEditor editor, Chunk chunk, ref Gdk.Color color)
+
+		void IChunkMarker.TransformChunks (List<Chunk> chunks)
+		{
+			int markerStart = Segment.Offset;
+			int markerEnd = Segment.EndOffset;
+			for (int i = 0; i < chunks.Count; i++) {
+				var chunk = chunks [i];
+				if (chunk.EndOffset < markerStart || markerEnd <= chunk.Offset) 
+					continue;
+				if (chunk.Offset == markerStart && chunk.EndOffset == markerEnd)
+					return;
+				if (chunk.Offset < markerStart && chunk.EndOffset > markerEnd) {
+					var newChunk = new Chunk (chunk.Offset, markerStart - chunk.Offset, chunk.Style);
+					chunks.Insert (i, newChunk);
+					chunk.Offset += newChunk.Length;
+					chunk.Length -= newChunk.Length;
+					continue;
+				}
+			}
+		}
+
+		void IChunkMarker.ChangeForeColor (TextEditor editor, Chunk chunk, ref Cairo.Color color)
 		{
 			if (Debugger.DebuggingService.IsDebugging)
 				return;
 			int markerStart = Segment.Offset;
 			int markerEnd = Segment.EndOffset;
-			if (!(markerStart <= chunk.Offset && chunk.Offset < markerEnd)) 
+			if (chunk.EndOffset <= markerStart || markerEnd <= chunk.Offset) 
 				return;
-
-			var bgc = editor.ColorStyle.Default.BackgroundColor;
+			var bgc = editor.ColorStyle.PlainText.Background;
 			double alpha = 0.6;
-			color.Red = (ushort)(color.Red * alpha + bgc.Red * (1.0 - alpha));
-			color.Green = (ushort)(color.Green * alpha + bgc.Green * (1.0 - alpha));
-			color.Blue = (ushort)(color.Blue * alpha + bgc.Blue * (1.0 - alpha));
+			color = new Cairo.Color (
+				color.R * alpha + bgc.R * (1.0 - alpha),
+				color.G * alpha + bgc.G * (1.0 - alpha),
+				color.B * alpha + bgc.B * (1.0 - alpha)
+			);
 		}
 		#endregion
 	}

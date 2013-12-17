@@ -1,26 +1,12 @@
-<Addin id          = "CSharpBinding"
-       namespace   = "MonoDevelop"
-       name        = "CSharp Language Binding"
-       author      = "Todd Berman"
-       copyright   = "MIT X11"
-       url         = "http://www.monodevelop.com/"
-       description = "CSharp Language Binding"
-       category    = "Language bindings"
-       version     = "4.0.1">
+<ExtensionModel>
 	
-	<Dependencies>
-		<Addin id="Core" version="4.0.1"/>
-		<Addin id="Ide" version="4.0.1"/>
-		<Addin id="SourceEditor2" version="4.0.1"/>
-		<Addin id="Refactoring" version="4.0.1"/>
-	</Dependencies>
-
 	<ConditionType id="MSBuildTargetIsAvailable" type="MonoDevelop.Projects.Formats.MSBuild.TargetsAvailableCondition" />
 
 	<Extension path = "/MonoDevelop/Ide/Commands">
 		<Command id = "MonoDevelop.CodeGeneration.CodeGenerationCommands.ShowCodeGenerationWindow"
 				_label = "S_how Code Generation Window"
-				shortcut = "Alt|Insert" />
+				shortcut = "Alt|Insert"
+				macShortcut = "Meta|I" />
 	</Extension>
 
 	<Extension path = "/MonoDevelop/ProjectModel/MSBuildItemTypes">
@@ -114,6 +100,7 @@
 		<Class fileExtensions = ".cs" class = "MonoDevelop.CSharp.Completion.CSharpCompletionTextEditorExtension" />
 		<Class fileExtensions = ".cs" class = "MonoDevelop.CSharp.Highlighting.HighlightUsagesExtension" />
 		<Class fileExtensions = ".cs" class = "MonoDevelop.CSharp.PathedDocumentTextEditorExtension" />
+		<Class fileExtensions = ".cs" class = "MonoDevelop.CSharp.UnitTestTextEditorExtension" />
 	</Extension>
 
 	<Extension path = "/MonoDevelop/ProjectModel/MD1SerializationMaps">
@@ -128,6 +115,9 @@
 	<Extension path = "/MonoDevelop/Core/MimeTypes">
 		<MimeType id="text/x-csharp" _description="C# source code" icon="md-csharp-file" isText="true">
 			<File pattern="*.cs" />
+		</MimeType>
+		<MimeType id="application/csproject+xml" _description="C# project file" baseType="application/xml">
+			<File pattern="*.csproj" />
 		</MimeType>
 	</Extension>
 
@@ -197,8 +187,16 @@
 			_title = "Move type to another file"
 			_description = "Moves current type to another file that matches the name of the type."
 			class = "MonoDevelop.CSharp.Refactoring.CodeActions.MoveTypeToFile" />
+		<Action mimeType="text/x-csharp"
+			_title = "Convert to enum"
+			_description = "Converts constant fields to enumeration"
+			class = "MonoDevelop.CSharp.Refactoring.CodeActions.ConvertToEnumAction" />
 	</Extension>
-
+	
+	<Extension path = "/MonoDevelop/Refactoring/CodeIssues">
+		<CodeIssue mimeType="text/x-csharp" severity = "Error" class="MonoDevelop.CSharp.Refactoring.CodeIssues.MonoTODOIssue"/>
+	</Extension>
+	
 	<Extension path = "/MonoDevelop/Ide/TextEditorResolver">
 		<Resolver class = "MonoDevelop.CSharp.Resolver.TextEditorResolverProvider" mimeType="text/x-csharp" />
 	</Extension>
@@ -233,6 +231,9 @@
 		<Class class = "MonoDevelop.CodeGeneration.ReadonlyPropertyGenerator" />
 		<Class class = "MonoDevelop.CodeGeneration.PropertyGenerator" />
 		<Class class = "MonoDevelop.CodeGeneration.ImplementInterfaceMembersGenerator" />
+		<Class class = "MonoDevelop.CodeGeneration.RequiredProtocolMemberGenerator" />
+		<Class class = "MonoDevelop.CodeGeneration.OptionalProtocolMemberGenerator" />
+		<Class class = "MonoDevelop.CodeGeneration.PartialGenerator" />
 		<Class class = "MonoDevelop.CodeGeneration.OverrideMembersGenerator" />
 		<Class class = "MonoDevelop.CodeGeneration.ToStringGenerator" />
 		<Class class = "MonoDevelop.CodeGeneration.RaiseEventMethodGenerator" />
@@ -261,13 +262,18 @@
 	<Extension path = "/MonoDevelop/SourceEditor2/TooltipProviders">
 		<Class id="LanguageItem" class="MonoDevelop.SourceEditor.LanguageItemTooltipProvider" />
 	</Extension>
+	
+	<Extension path = "/MonoDevelop/Ide/CompletionCharacters">
+		<Complete id="C#" insertbefore="Html" language="C#" commitOnSpace="True" commitChars="{}[]().,:;+-*/%&amp;|^!~=&lt;&gt;?@#'&quot;\"/>
+	</Extension>
+
 
 	<Module>
 	    <Runtime>
 	        <Import assembly="MonoDevelop.CSharpBinding.Autotools.dll"/>
 	    </Runtime>
 		<Dependencies>
-			<Addin id="Autotools" version="4.0.1"/>
+			<Addin id="Autotools" version="4.2.2"/>
 		</Dependencies>
 		<Extension path = "/MonoDevelop/Autotools/SimpleSetups">
 			<Class class="CSharpBinding.Autotools.CSharpAutotoolsSetup" />
@@ -279,7 +285,7 @@
 			<Import assembly="MonoDevelop.CSharpBinding.AspNet.dll"/>
 		</Runtime>
 		<Dependencies>
-			<Addin id="AspNet" version="4.0.1"/>
+			<Addin id="AspNet" version="4.2.2"/>
 		</Dependencies>
 		<Extension path = "/MonoDevelop/Asp/CompletionBuilders">
 			<Class class = "MonoDevelop.CSharp.Completion.AspLanguageBuilder" />
@@ -289,4 +295,4 @@
 			                 class = "MonoDevelop.CSharp.Refactoring.ASPNetReferenceFinder" />
 		</Extension>
 	</Module>
-</Addin>
+</ExtensionModel>

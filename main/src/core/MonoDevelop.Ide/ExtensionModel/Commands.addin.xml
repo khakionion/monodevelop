@@ -78,6 +78,7 @@
 			icon = "gtk-redo" 
 			_description = "Redo last undone action" 
 			shortcut = "Control|Shift|Z"
+			winShortcut = "Control|Y"
 			macShortcut = "Meta|Shift|Z" />
 	<Command id = "MonoDevelop.Ide.Commands.EditCommands.SelectAll" 
 			_label = "Select _All" 
@@ -151,16 +152,17 @@
 	<Command id = "MonoDevelop.Ide.Commands.EditCommands.ToggleFolding"
 			_label = "_Toggle Fold" 
 			shortcut = "Control|Shift|M"
-			macShortcut = "Control|Meta|Left"
+			macShortcut = "Alt|Meta|Left"
 			_description = "Toggles the folding at caret position."/>
 	<Command id = "MonoDevelop.Ide.Commands.EditCommands.ToggleAllFoldings"
 			_label = "Toggle _All Folds" 
 			shortcut = "Control|Shift|A"
+			macShortcut = "Alt|Shift|Meta|Right"
 			_description = "Toggles all the foldings in the document."/>
 	<Command id = "MonoDevelop.Ide.Commands.EditCommands.FoldDefinitions"
-			_label = "Show _Definitions Only" 
-			macShortcut = "Alt|Shift|Meta|Right"
-			_description = "Folds all method and property bodies."/>
+			_label = "Toggle _Definitions" 
+			macShortcut = "Alt|Shift|Meta|Left"
+			_description = "Toggles foldings of all method and property bodies."/>
 			
 	<Command id = "MonoDevelop.Ide.CodeFormatting.CodeFormattingCommands.FormatBuffer"
 			defaultHandler = "MonoDevelop.Ide.CodeFormatting.FormatBufferHandler"
@@ -318,6 +320,9 @@
 	<Command id = "MonoDevelop.Ide.Commands.ProjectCommands.Reload"
 			_description = "Reload selected project or solution"
 			_label = "Reload" />
+	<Command id = "MonoDevelop.Ide.Commands.ProjectCommands.EditSolutionItem"
+			_description = "Edit selected item"
+			_label = "Edit File" />			
 	<Command id = "MonoDevelop.Ide.Commands.ProjectCommands.ExportSolution"
 			defaultHandler = "MonoDevelop.Ide.Commands.ExportSolutionHandler"
 			_description = "Convert selected solution to another format"
@@ -488,6 +493,10 @@
 	<Command id = "MonoDevelop.Ide.Commands.FileTabCommands.ToggleMaximize"
 	         defaultHandler = "MonoDevelop.Ide.Commands.ToggleMaximizeHandler"
 			_label = "S_witch maximize/normal view"/>
+	<Command id = "MonoDevelop.Ide.Commands.FileTabCommands.ReopenClosedTab"
+			defaultHandler = "MonoDevelop.Ide.Commands.ReopenClosedTabHandler"
+			_label = "Reopen Closed Tab"
+			_description = "Opens the last tab that has been closed"/>
 	</Category>
 			
 	<!-- ViewCommands -->
@@ -556,14 +565,14 @@
 			icon = "md-navigate-back"
 			defaultHandler = "MonoDevelop.Ide.Commands.NavigateBack"
 			shortcut = "Control|Alt|Left"
-			macShortcut= "Meta|Alt|Left"
+			macShortcut= "Control|Meta|Left"
 			_description = "Move to previous point in code navigation history"/>
 	<Command id = "MonoDevelop.Ide.Commands.NavigationCommands.NavigateForward"
 			_label = "Navigate _Forward"
 			icon = "md-navigate-forward"
 			defaultHandler = "MonoDevelop.Ide.Commands.NavigateForward"
 			shortcut = "Control|Alt|Right"
-			macShortcut= "Meta|Alt|Right"
+			macShortcut= "Control|Meta|Right"
 			_description = "Move to next point in code navigation history"/>
 	<Command id = "MonoDevelop.Ide.Commands.NavigationCommands.NavigateHistory"
 			type="radio|array" 
@@ -647,7 +656,7 @@
 			defaultHandler = "MonoDevelop.Ide.Commands.OpenWindowListHandler"
 			type="radio|array"
 			_label = "Window List" />
-<!--
+
 	<Command id = "MonoDevelop.Ide.Commands.WindowCommands.SplitWindowVertically"
 			defaultHandler = "MonoDevelop.Ide.Commands.SplitWindowVertically"
 			_label = "Split _Vertically" />
@@ -661,7 +670,7 @@
 			defaultHandler = "MonoDevelop.Ide.Commands.SwitchSplitWindow"
 			shortcut = "Control|M"
 			_label = "_Switch Between Splits" />
-			-->
+			
 	<Command id = "MonoDevelop.Ide.Commands.WindowCommands.SwitchNextDocument"
 			defaultHandler = "MonoDevelop.Ide.Commands.SwitchNextDocument"
 			shortcut = "Control|Tab"
@@ -680,7 +689,7 @@
 	<Category _name = "Help" id = "Help">
 	
 	<Command id = "MonoDevelop.Ide.Commands.HelpCommands.Help"
-			_label = "Help" 
+			_label = "API Documentation"
 			icon = "gtk-help"
 			_description = "Show help"
 			defaultHandler = "MonoDevelop.Ide.Commands.HelpHandler"
@@ -703,7 +712,7 @@
 			_description = "Show about dialog" />
 	<Command id  = "MonoDevelop.Ide.Updater.UpdateCommands.CheckForUpdates"
 			defaultHandler = "MonoDevelop.Ide.Updater.CheckForUpdatesHandler"
-			_label = "_Check for Updates"
+			_label = "_Check for Updates..."
 			_description = "Check for updates to MonoDevelop and packages it requires" />
 	<Command id = "MonoDevelop.Ide.Commands.HelpCommands.SendFeedback"
 			defaultHandler = "MonoDevelop.Ide.Commands.SendFeedbackHandler"
@@ -835,9 +844,7 @@
 			shortcut = "Control|space" />
 	<Command id = "MonoDevelop.Ide.Commands.TextEditorCommands.ToggleCompletionSuggestionMode"
 			defaultHandler = "MonoDevelop.Ide.Commands.ToggleCompletionSuggestionModeHandler"
-			_label = "Toggle Completion Suggestion Mode" 
-			macShortcut="Alt|Shift|space"
-			shortcut = "Alt|Shift|space" />
+			_label = "Toggle Completion Suggestion Mode" />
 	<Command id = "MonoDevelop.Ide.Commands.TextEditorCommands.ShowCodeTemplateWindow"
 			_description="Inserts a template or when something is selected surrounds selection with a template"
 			_label = "I_nsert Template..."/>

@@ -51,7 +51,6 @@ namespace MonoDevelop.Projects
 	[ProjectModelDataItem ("AbstractDotNetProject")]
 	public abstract class DotNetProject : Project, IAssemblyProject
 	{
-
 		bool usePartialTypes = true;
 		ProjectParameters languageParameters;
 
@@ -192,6 +191,18 @@ namespace MonoDevelop.Projects
 		
 		public ProjectReferenceCollection References {
 			get { return projectReferences; }
+		}
+
+		public virtual bool CanReferenceProject (DotNetProject targetProject, out string reason)
+		{
+			if (!TargetFramework.CanReferenceAssembliesTargetingFramework (targetProject.TargetFramework)) {
+				reason = GettextCatalog.GetString ("Incompatible target framework: {0}", targetProject.TargetFramework.Id);
+				return false;
+			}
+
+			reason = null;
+
+			return true;
 		}
 
 		public IDotNetLanguageBinding LanguageBinding {
@@ -658,7 +669,7 @@ namespace MonoDevelop.Projects
 
 		public override IEnumerable<SolutionItem> GetReferencedItems (ConfigurationSelector configuration)
 		{
-			List<SolutionItem> items = new List<SolutionItem> ();
+			List<SolutionItem> items = new List<SolutionItem> (base.GetReferencedItems (configuration));
 			if (ParentSolution == null)
 				return items;
 
@@ -696,6 +707,11 @@ namespace MonoDevelop.Projects
 		/// </param>
 		public virtual IEnumerable<string> GetReferencedAssemblies (ConfigurationSelector configuration, bool includeProjectReferences)
 		{
+			return Services.ProjectService.GetExtensionChain (this).GetReferencedAssemblies (this, configuration, includeProjectReferences);
+		}
+
+		internal protected virtual IEnumerable<string> OnGetReferencedAssemblies (ConfigurationSelector configuration, bool includeProjectReferences)
+		{
 			IAssemblyReferenceHandler handler = this.ItemHandler as IAssemblyReferenceHandler;
 			if (handler != null) {
 				if (includeProjectReferences) {
@@ -715,6 +731,11 @@ namespace MonoDevelop.Projects
 					}
 				}
 			}
+
+			// System.Core is an implicit reference
+			var sa = AssemblyContext.GetAssemblies (TargetFramework).FirstOrDefault (a => a.Name == "System.Core" && a.Package.IsFrameworkPackage);
+			if (sa != null)
+				yield return sa.Location;
 		}
 
 		protected internal override void OnSave (IProgressMonitor monitor)
@@ -833,7 +854,7 @@ namespace MonoDevelop.Projects
 				return null;
 			//return all projects in the sln in case some are loaded dynamically
 			//FIXME: should we do this for the whole workspace?
-			return ParentSolution.GetAllProjects ().OfType<DotNetProject> ()
+			return ParentSolution.RootFolder.GetAllBuildableEntries (configuration).OfType<DotNetProject> ()
 				.Select (d => (string) d.GetOutputFileName (configuration))
 				.Where (d => !string.IsNullOrEmpty (d)).ToList ();
 		}
@@ -1084,14 +1105,12 @@ namespace MonoDevelop.Projects
 
 		internal void NotifyReferenceRemovedFromProject (ProjectReference reference)
 		{
-			SetNeedsBuilding (true);
 			NotifyModified ("References");
 			OnReferenceRemovedFromProject (new ProjectReferenceEventArgs (this, reference));
 		}
 
 		internal void NotifyReferenceAddedToProject (ProjectReference reference)
 		{
-			SetNeedsBuilding (true);
 			NotifyModified ("References");
 			OnReferenceAddedToProject (new ProjectReferenceEventArgs (this, reference));
 		}

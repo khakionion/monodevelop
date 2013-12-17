@@ -51,10 +51,11 @@ namespace MonoDevelop.CSharpBinding
 		{
 			TestWorkbenchWindow tww = new TestWorkbenchWindow ();
 			content = new TestViewContent ();
+			content.Data.Options.IndentStyle = IndentStyle.Auto;
 			tww.ViewContent = content;
 			content.ContentName = "a.cs";
 			content.GetTextEditorData ().Document.MimeType = "text/x-csharp";
-			
+
 			Document doc = new Document (tww);
 
 			var text = input;
@@ -139,10 +140,99 @@ namespace MonoDevelop.CSharpBinding
 		{
 			TestViewContent content;
 			var ext = Setup ("\"Hello\n\t$", out content);
-			ext.KeyPress (Gdk.Key.Tab, '\t', Gdk.ModifierType.None);
+			ext.ReindentOnTab ();
 
 			var newText = content.Text;
-			Assert.AreEqual ("\"Hello\n\t", newText);
+			Assert.AreEqual ("\"Hello\n", newText);
+		}
+
+
+		[Test]
+		public void TestVerbatimToNonVerbatimConversion ()
+		{
+			TestViewContent content;
+			var ext = Setup ("@$\"\t\"", out content);
+			content.GetTextEditorData ().Remove (0, 1);
+			var newText = content.Text;
+			Assert.AreEqual ("\"\\t\"", newText);
+		}
+
+		[Test]
+		public void TestNonVerbatimToVerbatimConversion ()
+		{
+			TestViewContent content;
+			var ext = Setup ("$\"\\t\"", out content);
+			content.GetTextEditorData ().Insert (0, "@");
+			ext.KeyPress ((Gdk.Key)'@', '@', Gdk.ModifierType.None);
+			var newText = content.Text;
+			Assert.AreEqual ("@\"\t\"", newText);
+		}
+
+		/// <summary>
+		/// Bug 14686 - Relative path strings containing backslashes have incorrect behavior when removing the @ symbol.
+		/// </summary>
+		[Test]
+		public void TestBug14686 ()
+		{
+			TestViewContent content;
+			var ext = Setup ("$\"\\\\\"", out content);
+			content.GetTextEditorData ().Insert (0, "@");
+			ext.KeyPress ((Gdk.Key)'@', '@', Gdk.ModifierType.None);
+			var newText = content.Text;
+			Assert.AreEqual ("@\"\\\"", newText);
+		}
+
+		[Test]
+		public void TestBug14686Case2 ()
+		{
+			TestViewContent content;
+			var ext = Setup ("$\"\\\"", out content);
+			content.GetTextEditorData ().Insert (0, "@");
+			ext.KeyPress ((Gdk.Key)'@', '@', Gdk.ModifierType.None);
+			var newText = content.Text;
+			Assert.AreEqual ("@\"\\\"", newText);
+
+			ext = Setup ("$\"\\\"a", out content);
+			content.GetTextEditorData ().Insert (0, "@");
+			ext.KeyPress ((Gdk.Key)'@', '@', Gdk.ModifierType.None);
+			newText = content.Text;
+			Assert.AreEqual ("@\"\\\"a", newText);
+
+		}
+		[Test]
+		public void TestCorrectReindentNextLine ()
+		{
+			TestViewContent content;
+			var ext = Setup (@"
+class Foo
+{
+	void Bar ()
+	{
+		try {
+		} catch (Exception e) {$}
+	}
+}
+", out content);
+			ext.ReindentOnTab ();
+			MiscActions.InsertNewLine (content.Data);
+			ext.KeyPress ((Gdk.Key)'\n', '\n', Gdk.ModifierType.None);
+
+			var newText = content.Text;
+
+			var expected = @"
+class Foo
+{
+	void Bar ()
+	{
+		try {
+		} catch (Exception e) {
+		}
+	}
+}
+";
+			if (newText != expected)
+				Console.WriteLine (newText);
+			Assert.AreEqual (expected, newText);
 		}
 	}
 }

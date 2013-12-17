@@ -29,6 +29,7 @@ using System;
 using System.Collections.Generic;
 using Gtk;
 using System.Runtime.InteropServices;
+using Mono.Addins;
 
 namespace MonoDevelop.Components
 {
@@ -62,11 +63,65 @@ namespace MonoDevelop.Components
 			return c;
 		}
 
+		public static Cairo.Color AddLight (this Cairo.Color color, double lightAmount)
+		{
+			HslColor c = color;
+			c.L += lightAmount;
+			return c;
+		}
+
 		public static Gtk.Widget ToGtkWidget (this Xwt.Widget widget)
 		{
-			return (Gtk.Widget) Xwt.Engine.WidgetRegistry.GetNativeWidget (widget);
+			return (Gtk.Widget) Xwt.Toolkit.CurrentEngine.GetNativeWidget (widget);
 		}
-		
+
+		public static void DrawImage (this Cairo.Context s, Gtk.Widget widget, Xwt.Drawing.Image image, double x, double y)
+		{
+			Xwt.Toolkit.CurrentEngine.RenderImage (widget, s, image, x, y);
+		}
+
+		public static Xwt.Drawing.Image ToXwtImage (this Gdk.Pixbuf pix)
+		{
+			return Xwt.Toolkit.CurrentEngine.WrapImage (pix);
+		}
+
+		public static Gdk.Pixbuf ToPixbuf (this Xwt.Drawing.Image image)
+		{
+			return (Gdk.Pixbuf)Xwt.Toolkit.CurrentEngine.GetNativeImage (image);
+		}
+
+		public static Gdk.Pixbuf ToPixbuf (this Xwt.Drawing.Image image, Gtk.IconSize size)
+		{
+			return (Gdk.Pixbuf)Xwt.Toolkit.CurrentEngine.GetNativeImage (image.WithSize (size));
+		}
+
+		public static Xwt.Drawing.Image WithSize (this Xwt.Drawing.Image image, Gtk.IconSize size)
+		{
+			int w, h;
+			if (!Gtk.Icon.SizeLookup (size, out w, out h))
+				return image;
+			return image.WithSize (w, h);
+		}
+
+		public static Xwt.Drawing.Image GetImageResource (this RuntimeAddin addin, string resource)
+		{
+			using (var s = addin.GetResource (resource)) {
+				var img = Xwt.Drawing.Image.FromStream (s);
+				int i = resource.LastIndexOf ('.');
+				if (i != -1) {
+					var resource2x = resource.Substring (0, i) + "@2x" + resource.Substring (i);
+					var s2x = addin.GetResource (resource2x);
+					if (s2x != null) {
+						using (s2x) {
+							var img2x = Xwt.Drawing.Image.FromStream (s2x);
+							return Xwt.Drawing.Image.CreateMultiSizeIcon (new Xwt.Drawing.Image[] {img, img2x});
+						}
+					}
+				}
+				return img;
+			}
+		}
+
 		public static void EnableAutoTooltips (this Gtk.TreeView tree)
 		{
 			TreeViewTooltipsData data = new TreeViewTooltipsData ();
@@ -472,30 +527,37 @@ namespace MonoDevelop.Components
 		protected override bool OnExposeEvent (Gdk.EventExpose evnt)
 		{
 			base.OnExposeEvent (evnt);
-			Gdk.Rectangle rect = Allocation;
-			col.CellSetCellData (tree.Model, iter, false, false);
-			int x = 1;
+
+			Gdk.Rectangle expose = Allocation;
 			Gdk.Color save = Gdk.Color.Zero;
+			int x = 1;
+
+			col.CellSetCellData (tree.Model, iter, false, false);
+
 			foreach (CellRenderer cr in col.CellRenderers) {
 				if (!cr.Visible)
 					continue;
+
 				if (cr is CellRendererText) {
 					save = ((CellRendererText)cr).ForegroundGdk;
 					((CellRendererText)cr).ForegroundGdk = Style.Foreground (State);
 				}
+
 				int sp, wi, he, xo, yo;
 				col.CellGetPosition (cr, out sp, out wi);
-				Gdk.Rectangle colcrect = new Gdk.Rectangle (x, rect.Y, wi, rect.Height - 2);
-				cr.GetSize (tree, ref colcrect, out xo, out yo, out wi, out he);
-				int leftMargin = (int) ((colcrect.Width - wi) * cr.Xalign);
-				int rightMargin = (int) ((colcrect.Height - he) * cr.Yalign);
-				Gdk.Rectangle crect = new Gdk.Rectangle (colcrect.X + leftMargin, colcrect.Y + rightMargin + 1, wi, he);
-				cr.Render (this.GdkWindow, this, colcrect, crect, rect, CellRendererState.Focused);
-				x += colcrect.Width + col.Spacing + 1;
+				Gdk.Rectangle bgrect = new Gdk.Rectangle (x, expose.Y, wi, expose.Height - 2);
+				cr.GetSize (tree, ref bgrect, out xo, out yo, out wi, out he);
+				int leftMargin = (int) ((bgrect.Width - wi) * cr.Xalign);
+				int topMargin = (int) ((bgrect.Height - he) * cr.Yalign);
+				Gdk.Rectangle cellrect = new Gdk.Rectangle (bgrect.X + leftMargin, bgrect.Y + topMargin + 1, wi, he);
+				cr.Render (this.GdkWindow, this, bgrect, cellrect, expose, CellRendererState.Focused);
+				x += bgrect.Width + col.Spacing + 1;
+
 				if (cr is CellRendererText) {
 					((CellRendererText)cr).ForegroundGdk = save;
 				}
 			}
+
 			return true;
 		}
 		

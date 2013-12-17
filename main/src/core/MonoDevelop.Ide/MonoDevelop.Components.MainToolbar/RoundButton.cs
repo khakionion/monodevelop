@@ -30,11 +30,12 @@ using MonoDevelop.Components;
 using Cairo;
 using MonoDevelop.Ide;
 using System.Reflection;
+using Mono.TextEditor;
 
 
 namespace MonoDevelop.Components.MainToolbar
 {
-	class LazyImage
+	class LazyImage : IDisposable
 	{
 		string resourceName;
 
@@ -57,6 +58,13 @@ namespace MonoDevelop.Components.MainToolbar
 			return lazy.Img;
 		}
 
+		public void Dispose ()
+		{
+			if (img != null) {
+				img.Dispose ();
+				img = null;
+			}
+		}
 	}
 
 	class RoundButton : Gtk.EventBox
@@ -69,7 +77,7 @@ namespace MonoDevelop.Components.MainToolbar
 		Cairo.Color fill2Color;
 		Cairo.Color fill3Color;*/
 
-		LazyImage btnNormal, btnPressed, btnInactive, btnHover;
+		LazyImage btnNormal/*, btnInactive, btnHover, btnPressed*/;
 
 		LazyImage iconRunNormal, iconRunDisabled;
 		LazyImage iconStopNormal, iconStopDisabled;
@@ -89,9 +97,9 @@ namespace MonoDevelop.Components.MainToolbar
 			SetSizeRequest (height, height);
 
 			btnNormal = new LazyImage ("btExecuteBase-Normal.png");
-			btnInactive = new LazyImage ("btExecuteBase-Disabled.png");
-			btnPressed = new LazyImage ("btExecuteBase-Pressed.png");
-			btnHover = new LazyImage ("btExecuteBase-Hover.png");
+//			btnInactive = new LazyImage ("btExecuteBase-Disabled.png");
+			//btnPressed = new LazyImage ("btExecuteBase-Pressed.png");
+//			btnHover = new LazyImage ("btExecuteBase-Hover.png");
 
 			iconRunNormal = new LazyImage ("icoExecute-Normal.png");
 			iconRunDisabled = new LazyImage ("icoExecute-Disabled.png");
@@ -181,8 +189,8 @@ namespace MonoDevelop.Components.MainToolbar
 				var icon = GetIcon();
 				icon.Show (
 					context,
-					Allocation.X + (icon.Width - Allocation.Width) / 2,
-					Allocation.Y + (icon.Height - Allocation.Height) / 2
+					Allocation.X + Math.Max (0, (Allocation.Width - icon.Width) / 2),
+					Allocation.Y + Math.Max (0, (Allocation.Height - icon.Height) / 2)
 				);
 			}
 			return base.OnExposeEvent (evnt);
@@ -220,11 +228,11 @@ namespace MonoDevelop.Components.MainToolbar
 			using (var lg = new LinearGradient (0, centerY - rad, 0, centerY +rad)) {
 				lg.AddColorStop (0, new Cairo.Color (high, high, high));
 				lg.AddColorStop (1, new Cairo.Color (low, low, low));
-				context.Pattern = lg;
+				context.SetSource (lg);
 				context.FillPreserve ();
 			}
 
-			context.Color = new Cairo.Color (0, 0, 0, 0.4);
+			context.SetSourceRGBA (0, 0, 0, 0.4);
 			context.LineWidth = 1;
 			context.Stroke ();
 		}
@@ -236,6 +244,46 @@ namespace MonoDevelop.Components.MainToolbar
 			EventHandler handler = this.Clicked;
 			if (handler != null)
 				handler (this, e);
+		}
+
+		protected override void OnDestroyed ()
+		{
+			base.OnDestroyed ();
+
+			if (btnNormal != null) {
+				btnNormal.Dispose ();
+				btnNormal = null;
+			}
+
+			if (iconRunNormal != null) {
+				iconRunNormal.Dispose ();
+				iconRunNormal = null;
+			}
+
+			if (iconRunDisabled != null) {
+				iconRunDisabled.Dispose ();
+				iconRunDisabled = null;
+			}
+
+			if (iconStopNormal != null) {
+				iconStopNormal.Dispose ();
+				iconStopNormal = null;
+			}
+
+			if (iconStopDisabled != null) {
+				iconStopDisabled.Dispose ();
+				iconStopDisabled = null;
+			}
+
+			if (iconBuildNormal != null) {
+				iconBuildNormal.Dispose ();
+				iconBuildNormal = null;
+			}
+
+			if (iconBuildDisabled != null) {
+				iconBuildDisabled.Dispose ();
+				iconBuildDisabled = null;
+			}
 		}
 	}
 }

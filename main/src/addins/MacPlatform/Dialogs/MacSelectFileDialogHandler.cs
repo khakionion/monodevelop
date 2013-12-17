@@ -25,8 +25,10 @@
 // THE SOFTWARE.
 
 using System;
+using System.Text;
 using System.Drawing;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Collections.Generic;
 using MonoMac.Foundation;
 using MonoMac.AppKit;
@@ -66,15 +68,14 @@ namespace MonoDevelop.MacIntegration
 					}
 				}
 				
-				var action = RunPanel (data, panel);
-				
-				if (action) {
-					data.SelectedFiles = GetSelectedFiles (panel);
+				if (panel.RunModal () == 0) {
 					GtkQuartz.FocusWindow (data.TransientFor ?? MessageService.RootWindow);
-				} else {
-					GtkQuartz.FocusWindow (data.TransientFor ?? MessageService.RootWindow);
+					return false;
 				}
-				return action;
+
+				data.SelectedFiles = GetSelectedFiles (panel);
+				GtkQuartz.FocusWindow (data.TransientFor ?? MessageService.RootWindow);
+				return true;
 			} finally {
 				if (panel != null)
 					panel.Dispose ();
@@ -101,31 +102,16 @@ namespace MonoDevelop.MacIntegration
 			
 			if (!string.IsNullOrEmpty (data.Title))
 				panel.Title = data.Title;
-			
-			//FIXME: 10.6 only
-			//if (!string.IsNullOrEmpty (data.InitialFileName))
-			//	panel.NameFieldStringValue = data.InitialFileName;
+
+			if (!string.IsNullOrEmpty (data.InitialFileName))
+				panel.NameFieldStringValue = data.InitialFileName;
 			
 			if (!string.IsNullOrEmpty (data.CurrentFolder))
-				panel.Directory = data.CurrentFolder;
-			//FIXME: 10.6 only
-			//	panel.DirectoryUrl = new NSUrl (data.CurrentFolder, true);
+				panel.DirectoryUrl = new NSUrl (data.CurrentFolder, true);
 			
 			var openPanel = panel as NSOpenPanel;
 			if (openPanel != null) {
 				openPanel.AllowsMultipleSelection = data.SelectMultiple;
-			}
-		}
-		
-		internal static bool RunPanel (SelectFileDialogData data, NSSavePanel panel)
-		{
-			var dir = string.IsNullOrEmpty (data.CurrentFolder)? null : data.CurrentFolder;
-			var file = string.IsNullOrEmpty (data.InitialFileName)? null : data.InitialFileName;
-			if (panel is NSOpenPanel) {
-				return ((NSOpenPanel)panel).RunModal (dir, file, null) != 0;
-			} else {
-				//FIXME: deprecated on 10.6, alternatives only on 10.6
-				return panel.RunModal (dir, file) != 0;
 			}
 		}
 		
@@ -163,12 +149,12 @@ namespace MonoDevelop.MacIntegration
 		}
 		
 		//based on MonoDevelop.Ide.Extensions.MimeTypeNode
-		static System.Text.RegularExpressions.Regex CreateGlobRegex (IEnumerable<string> globs)
+		static Regex CreateGlobRegex (IEnumerable<string> globs)
 		{
-			var globalPattern = new System.Text.StringBuilder ();
+			var globalPattern = new StringBuilder ();
 			
 			foreach (var glob in globs) {
-				string pattern = System.Text.RegularExpressions.Regex.Escape (glob);
+				string pattern = Regex.Escape (glob);
 				pattern = pattern.Replace ("\\*",".*");
 				pattern = pattern.Replace ("\\?",".");
 				pattern = pattern.Replace ("\\|","$|^");
@@ -177,8 +163,8 @@ namespace MonoDevelop.MacIntegration
 					globalPattern.Append ('|');
 				globalPattern.Append (pattern);
 			}
-			return new System.Text.RegularExpressions.Regex (globalPattern.ToString (),
-				System.Text.RegularExpressions.RegexOptions.Compiled);
+
+			return new Regex (globalPattern.ToString (), RegexOptions.Compiled | RegexOptions.IgnoreCase);
 		}
 		
 		internal static NSPopUpButton CreateFileFilterPopup (SelectFileDialogData data, NSSavePanel panel)

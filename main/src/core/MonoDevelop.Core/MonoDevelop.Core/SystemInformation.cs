@@ -82,7 +82,6 @@ namespace MonoDevelop.Core
 					.Where (l => !string.IsNullOrEmpty (l))
 					.ToArray ();
 				if (lines.Length > 0) {
-					sb.Append ("Git revision: ");
 					foreach (var line in lines) {
 						sb.AppendLine (line);
 					}
@@ -124,7 +123,7 @@ namespace MonoDevelop.Core
 		{
 			var biFile = ((FilePath)Assembly.GetEntryAssembly ().Location).ParentDirectory.Combine ("buildinfo");
 			if (File.Exists (biFile)) {
-				var line = File.ReadAllLines (biFile).Select (l => l.Split (':')).Where (a => a.Length > 1 && a [0].Trim () == "Release ID").FirstOrDefault ();
+				var line = File.ReadAllLines (biFile).Select (l => l.Split (':')).FirstOrDefault (a => a.Length > 1 && a [0].Trim () == "Release ID");
 				if (line != null)
 					return line [1].Trim ();
 			}

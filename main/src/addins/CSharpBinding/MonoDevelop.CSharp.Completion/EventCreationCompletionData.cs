@@ -38,7 +38,7 @@ using ICSharpCode.NRefactory.TypeSystem;
 
 namespace MonoDevelop.CSharp.Completion
 {
-	public class EventCreationCompletionData : CompletionData
+	class EventCreationCompletionData : CompletionData
 	{
 		string parameterList;
 		IUnresolvedMember callingMember;
@@ -82,7 +82,7 @@ namespace MonoDevelop.CSharp.Completion
 			editor.Replace (initialOffset, editor.Caret.Offset - initialOffset, this.DisplayText + (AddSemicolon ? ";" : ""));
 			
 			// Search opening bracket of member
-			int pos = callingMember != null ? editor.Document.LocationToOffset (callingMember.BodyRegion.BeginLine, callingMember.BodyRegion.BeginColumn) : initialOffset;
+			int pos = callingMember != null && !callingMember.BodyRegion.Begin.IsEmpty ? editor.Document.LocationToOffset (callingMember.BodyRegion.BeginLine, callingMember.BodyRegion.BeginColumn) : initialOffset;
 			while (pos < editor.Document.TextLength && editor.Document.GetCharAt (pos) != '{') {
 				pos++;
 			}
@@ -93,13 +93,14 @@ namespace MonoDevelop.CSharp.Completion
 			pos = Math.Max (0, Math.Min (pos, editor.Document.TextLength - 1));
 			
 			// Insert new event handler after closing bracket
-			string indent = editor.Document.GetLine (callingMember.Region.BeginLine).GetIndentation (editor.Document);
+			var line = callingMember != null ? editor.Document.GetLine (callingMember.Region.BeginLine) : editor.Document.GetLineByOffset (initialOffset);
+			string indent = line.GetIndentation (editor.Document);
 			
 			StringBuilder sb = new StringBuilder ();
 			sb.Append (editor.EolMarker);
 			sb.Append (editor.EolMarker);
 			sb.Append (indent);
-			if (callingMember.IsStatic)
+			if (callingMember != null && callingMember.IsStatic)
 				sb.Append ("static ");
 			sb.Append ("void ");
 			int pos2 = sb.Length;

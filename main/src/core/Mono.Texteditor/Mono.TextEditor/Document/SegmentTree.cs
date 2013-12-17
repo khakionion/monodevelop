@@ -160,8 +160,12 @@ namespace Mono.TextEditor
 			tree.InsertRight (tree.Root.GetOuterRight (), node);
 		}
 		
-		public void Remove (TreeSegment node)
+		public bool Remove (TreeSegment node)
 		{
+			if (node.segmentTree == null)
+				return false;
+			if (node.segmentTree != this)
+				throw new InvalidOperationException ("Tried to remove tree segment from wrong tree.");
 			var calculatedOffset = node.Offset;
 			var next = node.GetNextNode ();
 			if (next != null)
@@ -172,6 +176,7 @@ namespace Mono.TextEditor
 			node.segmentTree = null;
 			node.parent = node.left = node.right = null;
 			node.DistanceToPrevNode = calculatedOffset;
+			return true;
 		}
 		
 		TreeSegment SearchFirstSegmentWithStartAfter (int startOffset)
@@ -183,6 +188,8 @@ namespace Mono.TextEditor
 			var result = SearchNode (ref startOffset);
 			while (startOffset == 0) {
 				var pre = result == null ? tree.Root.GetOuterRight () : result.GetPrevNode ();
+				if (pre == null)
+					return null;
 				startOffset += pre.DistanceToPrevNode;
 				result = pre;
 			}
@@ -253,16 +260,17 @@ namespace Mono.TextEditor
 				var node = interval.node;
 				int nodeStart = interval.start - node.DistanceToPrevNode;
 				int nodeEnd = interval.end - node.DistanceToPrevNode;
-				if (node.left != null) {
-					nodeStart -= node.left.TotalLength;
-					nodeEnd -= node.left.TotalLength;
+				var leftNode = node.left;
+				if (leftNode != null) {
+					nodeStart -= leftNode.TotalLength;
+					nodeEnd -= leftNode.TotalLength;
 				}
 			
 				if (node.DistanceToMaxEnd < nodeStart) 
 					continue;
 			
-				if (node.left != null)
-					intervalStack.Push (new Interval (node.left, interval.start, interval.end));
+				if (leftNode != null)
+					intervalStack.Push (new Interval (leftNode, interval.start, interval.end));
 				
 				if (nodeEnd < 0) 
 					continue;
@@ -270,8 +278,9 @@ namespace Mono.TextEditor
 				if (nodeStart <= node.Length)
 					yield return (T)node;
 			
-				if (node.right != null) 
-					intervalStack.Push (new Interval (node.right, nodeStart, nodeEnd));
+				var rightNode = node.right;
+				if (rightNode != null) 
+					intervalStack.Push (new Interval (rightNode, nodeStart, nodeEnd));
 			}
 		}
 	}
@@ -279,7 +288,7 @@ namespace Mono.TextEditor
 	interface TextSegmentTree
 	{
 		void Add (TreeSegment segment);
-		void Remove (TreeSegment segment);
+		bool Remove (TreeSegment segment);
 	}
 	
 	public class TreeSegment : IRedBlackTreeNode

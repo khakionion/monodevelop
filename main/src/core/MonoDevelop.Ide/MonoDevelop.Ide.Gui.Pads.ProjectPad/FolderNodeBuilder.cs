@@ -66,9 +66,10 @@ namespace MonoDevelop.Ide.Gui.Pads.ProjectPad
 			Project project = builder.GetParentDataItem (typeof(Project), true) as Project;
 			if (project == null)
 				return;
-			
+
 			ProjectFileCollection files;
-			ArrayList folders;
+			List<string> folders;
+
 			GetFolderContent (project, path, out files, out folders);
 			
 			foreach (ProjectFile file in files)
@@ -78,11 +79,12 @@ namespace MonoDevelop.Ide.Gui.Pads.ProjectPad
 				builder.AddChild (new ProjectFolder (folder, project, dataObject));
 		}
 				
-		void GetFolderContent (Project project, string folder, out ProjectFileCollection files, out ArrayList folders)
+		void GetFolderContent (Project project, string folder, out ProjectFileCollection files, out List<string> folders)
 		{
-			files = new ProjectFileCollection ();
-			folders = new ArrayList ();
 			string folderPrefix = folder + Path.DirectorySeparatorChar;
+
+			files = new ProjectFileCollection ();
+			folders = new List<string> ();
 			
 			foreach (ProjectFile file in project.Files)
 			{
@@ -104,7 +106,7 @@ namespace MonoDevelop.Ide.Gui.Pads.ProjectPad
 					dir = file.Name;
 				
 				// add the directory if it isn't already present
-				if (dir.StartsWith (folderPrefix)) {
+				if (dir.StartsWith (folderPrefix, StringComparison.Ordinal)) {
 					int i = dir.IndexOf (Path.DirectorySeparatorChar, folderPrefix.Length);
 					if (i != -1) dir = dir.Substring (0,i);
 					if (!folders.Contains (dir))
@@ -123,15 +125,20 @@ namespace MonoDevelop.Ide.Gui.Pads.ProjectPad
 			if (project.Files.Count > 500)
 				return true;
 
-			ProjectFileCollection files;
-			ArrayList folders;
-			
-			string path = GetFolderPath (dataObject);
-			
-			GetFolderContent (project, path, out files, out folders);
+			var folder = ((ProjectFolder) dataObject).Path;
 
-			if (files.Count > 0 || folders.Count > 0) return true;
-			
+			foreach (var file in project.Files) {
+				FilePath path;
+
+				if (file.Subtype != Subtype.Directory)
+					path = file.IsLink ? project.BaseDirectory.Combine (file.ProjectVirtualPath) : file.FilePath;
+				else
+					path = file.FilePath;
+
+				if (path.IsChildPathOf (folder))
+					return true;
+			}
+
 			return false;
 		}
 	}
@@ -200,7 +207,7 @@ namespace MonoDevelop.Ide.Gui.Pads.ProjectPad
 			string what;
 			Project targetProject = (Project) CurrentNode.GetParentDataItem (typeof(Project), true);
 			Project sourceProject;
-			System.Collections.Generic.IEnumerable<ProjectFile> groupedChildren = null;
+			IEnumerable<ProjectFile> groupedChildren = null;
 			
 			if (dataObject is ProjectFolder) {
 				source = ((ProjectFolder) dataObject).Path;
@@ -334,7 +341,7 @@ namespace MonoDevelop.Ide.Gui.Pads.ProjectPad
 				AlertButton res = MessageService.AskQuestion (question, AlertButton.Cancel, noSave, AlertButton.Save);
 				if (res == AlertButton.Cancel)
 					return;
-				else if (res == AlertButton.Save) { 
+				if (res == AlertButton.Save) {
 					try {
 						foreach (Document doc in filesToSave) {
 							doc.Save ();

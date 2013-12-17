@@ -35,12 +35,14 @@ using System.Collections.Generic;
 using MonoDevelop.Ide.CodeCompletion;
 using MonoDevelop.Core;
 using MonoDevelop.Ide.Gui.Components;
+using Mono.TextEditor;
 
 using StockIcons = MonoDevelop.Ide.Gui.Stock;
+using Xwt.Motion;
 
 namespace MonoDevelop.Components.MainToolbar
 {
-	class StatusArea : EventBox, StatusBar, Animatable
+	class StatusArea : EventBox, StatusBar, Xwt.Motion.IAnimatable
 	{
 		struct Message
 		{
@@ -59,23 +61,23 @@ namespace MonoDevelop.Components.MainToolbar
 		public struct RenderArg
 		{
 			public Gdk.Rectangle Allocation { get; set; }
-			public float         BuildAnimationProgress { get; set; }
-			public float         BuildAnimationOpacity { get; set; }
+			public double        BuildAnimationProgress { get; set; }
+			public double        BuildAnimationOpacity { get; set; }
 			public Gdk.Rectangle ChildAllocation { get; set; }
 			public Gdk.Pixbuf    CurrentPixbuf { get; set; }
 			public string        CurrentText { get; set; }
 			public bool          CurrentTextIsMarkup { get; set; }
-			public float         ErrorAnimationProgress { get; set; }
-			public float         HoverProgress { get; set; }
+			public double        ErrorAnimationProgress { get; set; }
+			public double        HoverProgress { get; set; }
 			public string        LastText { get; set; }
 			public bool          LastTextIsMarkup { get; set; }
 			public Gdk.Pixbuf    LastPixbuf { get; set; }
 			public Gdk.Point     MousePosition { get; set; }
 			public Pango.Context Pango { get; set; }
-			public float         ProgressBarAlpha { get; set; }
+			public double        ProgressBarAlpha { get; set; }
 			public float         ProgressBarFraction { get; set; }
 			public bool          ShowProgressBar { get; set; }
-			public float         TextAnimationProgress { get; set; }
+			public double        TextAnimationProgress { get; set; }
 		}
 
 		StatusAreaTheme theme;
@@ -131,10 +133,10 @@ namespace MonoDevelop.Components.MainToolbar
 
 			Action<bool> animateProgressBar = 
 				showing => this.Animate ("ProgressBarFade",
-				                         easing: Easing.CubicInOut,
-				                         start: renderArg.ProgressBarAlpha,
-				                         end: showing ? 1.0f : 0.0f,
-				                         callback: val => renderArg.ProgressBarAlpha = val);
+				                         val => renderArg.ProgressBarAlpha = val,
+				                         renderArg.ProgressBarAlpha,
+				                         showing ? 1.0f : 0.0f,
+				                         easing: Easing.CubicInOut);
 
 			ProgressBegin += delegate {
 				renderArg.ShowProgressBar = true;
@@ -192,10 +194,10 @@ namespace MonoDevelop.Components.MainToolbar
 			tracker.MouseMoved += (sender, e) => QueueDraw ();
 			tracker.HoveredChanged += (sender, e) => {
 				this.Animate ("Hovered",
-				              easing: Easing.SinInOut,
-				              start: renderArg.HoverProgress,
-				              end: tracker.Hovered ? 1.0f : 0.0f,
-				              callback: x => renderArg.HoverProgress = x);
+				              x => renderArg.HoverProgress = x,
+				              renderArg.HoverProgress,
+				              tracker.Hovered ? 1.0f : 0.0f,
+				              easing: Easing.SinInOut);
 			};
 
 			IdeApp.FocusIn += delegate {
@@ -214,6 +216,9 @@ namespace MonoDevelop.Components.MainToolbar
 				theme.Dispose ();
 			base.OnDestroyed ();
 		}
+		
+		void IAnimatable.BatchBegin () { }
+		void IAnimatable.BatchCommit () { QueueDraw (); }
 
 		void StartBuildAnimation ()
 		{
@@ -231,9 +236,9 @@ namespace MonoDevelop.Components.MainToolbar
 		void StopBuildAnimation ()
 		{
 			this.Animate ("BuildOpacity",
-			              start: renderArg.BuildAnimationOpacity,
-			              end: 0.0f,
-			              callback: x => renderArg.BuildAnimationOpacity = x,
+			              x => renderArg.BuildAnimationOpacity = x,
+			              renderArg.BuildAnimationOpacity,
+			              0.0f,
 			              finished: (val, aborted) => { if (!aborted) this.AbortAnimation ("Build"); });
 		}
 
@@ -431,6 +436,9 @@ namespace MonoDevelop.Components.MainToolbar
 			Gdk.Pixbuf[] images;
 			TooltipPopoverWindow tooltipWindow;
 			bool mouseOver;
+			uint tipShowTimeoutId;
+			DateTime scheduledTipTime;
+			const int TooltipTimeout = 350;
 			
 			public StatusIcon (StatusArea statusBar, Gdk.Pixbuf icon)
 			{
@@ -462,6 +470,25 @@ namespace MonoDevelop.Components.MainToolbar
 			
 			void ShowTooltip ()
 			{
+				scheduledTipTime = DateTime.Now + TimeSpan.FromMilliseconds (TooltipTimeout);
+				if (tipShowTimeoutId == 0)
+					tipShowTimeoutId = GLib.Timeout.Add (TooltipTimeout, ShowTooltipEvent);
+			}
+
+			bool ShowTooltipEvent ()
+			{
+				tipShowTimeoutId = 0;
+
+				if (!mouseOver)
+					return false;
+
+				int remainingMs = (int) (scheduledTipTime - DateTime.Now).TotalMilliseconds;
+				if (remainingMs > 50) {
+					// Still some significant time left. Re-schedule the timer
+					tipShowTimeoutId = GLib.Timeout.Add ((uint) remainingMs, ShowTooltipEvent);
+					return false;
+				}
+
 				if (!string.IsNullOrEmpty (tip)) {
 					HideTooltip ();
 					tooltipWindow = new TooltipPopoverWindow ();
@@ -469,6 +496,7 @@ namespace MonoDevelop.Components.MainToolbar
 					tooltipWindow.Text = tip;
 					tooltipWindow.ShowPopup (box, PopupPosition.Top);
 				}
+				return false;
 			}
 			
 			void HideTooltip ()
@@ -842,7 +870,7 @@ namespace MonoDevelop.Components.MainToolbar
 					gr.AddColorStop (0, new Cairo.Color (0, 0, 0, 0));
 					gr.AddColorStop (0.5, new Cairo.Color (0, 0, 0, 0.2));
 					gr.AddColorStop (1, new Cairo.Color (0, 0, 0, 0));
-					ctx.Pattern = gr;
+					ctx.SetSource (gr);
 					ctx.Fill ();
 				}
 			}

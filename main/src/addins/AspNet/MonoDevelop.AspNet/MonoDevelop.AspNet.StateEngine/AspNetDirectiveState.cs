@@ -33,33 +33,38 @@ using MonoDevelop.Xml.StateEngine;
 
 namespace MonoDevelop.AspNet.StateEngine
 {
-	
+	public class AspNetDirectiveAttributeState : XmlAttributeValueState
+	{
+		public override State PushChar (char c, IParseContext context, ref string rollback)
+		{
+			// allow < in values
+			if (context.StateTag != '\0' && context.CurrentStateLength > 1 && c == '<') {
+				context.KeywordBuilder.Append (c);
+				return null;
+			}
+			return base.PushChar (c, context, ref rollback);
+		}
+	}
 	
 	public class AspNetDirectiveState : State
 	{
-		XmlAttributeState AttributeState;
-		XmlNameState NameState;
-		XmlMalformedTagState MalformedTagState;
+		readonly XmlAttributeState AttributeState;
+		readonly XmlNameState NameState;
 		
-		public AspNetDirectiveState () : this (new XmlAttributeState ()) {}
+		public AspNetDirectiveState () : this (
+			new XmlNameState (),
+			new XmlAttributeState (new XmlNameState (), new AspNetDirectiveAttributeState ())
+			)
+		{
+		}
 		
-		public AspNetDirectiveState (XmlAttributeState attributeState)
-			: this (attributeState, new XmlNameState ()) {}
-		
-		public AspNetDirectiveState (XmlAttributeState attributeState, XmlNameState nameState)
-			: this (attributeState, nameState, new XmlMalformedTagState ()) {}
-		
-		public AspNetDirectiveState (XmlAttributeState attributeState, XmlNameState nameState,
-			XmlMalformedTagState malformedTagState)
+		public AspNetDirectiveState (XmlNameState nameState, XmlAttributeState attributeState)
 		{
 			this.AttributeState = attributeState;
 			this.NameState = nameState;
-			this.MalformedTagState = malformedTagState;
-			attributeState.AllowOpeningTagCharInsideAttributeValue = true;
 			
 			Adopt (this.AttributeState);
 			Adopt (this.NameState);
-			Adopt (this.MalformedTagState);
 			
 		}
 		
@@ -77,7 +82,7 @@ namespace MonoDevelop.AspNet.StateEngine
 			if (c == '<') {
 				context.LogError ("Unexpected '<' in directive.");
 				rollback = string.Empty;
-				return MalformedTagState;
+				return Parent;
 			}
 			
 			Debug.Assert (!directive.IsComplete);
@@ -117,7 +122,7 @@ namespace MonoDevelop.AspNet.StateEngine
 			
 			rollback = string.Empty;
 			context.LogError ("Unexpected character '" + c + "' in tag.");
-			return MalformedTagState;
+			return Parent;
 		}
 	}
 }

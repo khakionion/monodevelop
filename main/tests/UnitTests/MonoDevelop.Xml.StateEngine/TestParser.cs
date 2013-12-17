@@ -36,11 +36,9 @@ using ICSharpCode.NRefactory.TypeSystem;
 
 namespace MonoDevelop.Xml.StateEngine
 {
-	
-	
 	public class TestParser : Parser
 	{
-		List<Error> errors = new List<Error> ();
+		readonly List<Error> errors = new List<Error> ();
 		
 		public TestParser (RootState rootState) : this (rootState, false)
 		{
@@ -65,13 +63,17 @@ namespace MonoDevelop.Xml.StateEngine
 			for (int i = 0; i < doc.Length; i++) {
 				char c = doc[i];
 				if (c == trigger) {
+					if (i + 1 < doc.Length && doc [i + 1] == trigger) {
+						Push (c);
+						i++;
+						continue;
+					}
 					asserts[assertNo] ();
 					assertNo++;
 				} else {
 					Push (c);
 				}
 			}
-			Assert.AreEqual (Position, doc.Length - assertNo);
 		}
 		
 		public string GetPath ()
@@ -131,7 +133,7 @@ namespace MonoDevelop.Xml.StateEngine
 		public void AssertErrorCount (int count, Func<Error,bool> filter)
 		{
 			string msg = null;
-			int actualCount = errors.Where (filter).Count ();
+			int actualCount = errors.Count (filter);
 			if (actualCount != count) {
 				System.Text.StringBuilder sb = new System.Text.StringBuilder ();
 				foreach (Error err in errors)
@@ -141,13 +143,19 @@ namespace MonoDevelop.Xml.StateEngine
 			}
 			Assert.AreEqual (count, actualCount, msg);
 		}
-		
+
 		public void AssertAttributes (params string[] nameValuePairs)
+		{
+			AssertNodeIs<IAttributedXObject> ();
+			IAttributedXObject obj = (IAttributedXObject) Nodes.Peek ();
+			AssertAttributes (obj, nameValuePairs);
+		}
+
+		public void AssertAttributes (IAttributedXObject obj, params string[] nameValuePairs)
 		{
 			if ((nameValuePairs.Length % 2) != 0)
 				throw new ArgumentException ("nameValuePairs");
-			AssertNodeIs<IAttributedXObject> ();
-			IAttributedXObject obj = (IAttributedXObject) Nodes.Peek ();
+
 			int i = 0;
 			foreach (XAttribute att in obj.Attributes) {
 				Assert.IsTrue (i < nameValuePairs.Length);
@@ -155,7 +163,7 @@ namespace MonoDevelop.Xml.StateEngine
 				Assert.AreEqual (nameValuePairs[i + 1], att.Value);
 				i += 2;
 			}
-			Assert.IsTrue (i == nameValuePairs.Length);
+			Assert.AreEqual (nameValuePairs.Length, i);
 		}
 		
 		public void AssertNoErrors ()

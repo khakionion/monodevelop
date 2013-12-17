@@ -14,26 +14,32 @@
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|x86' ">
     <DebugSymbols>True</DebugSymbols>
     <DebugType>full</DebugType>
-    <Optimize>True</Optimize>
+    <Optimize>false</Optimize>
     <OutputPath>..\..\..\build\bin</OutputPath>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
     <EnvironmentVariables>
       <EnvironmentVariables>
-        <Variable name="MONO_ADDINS_REGISTRY" value="." />
         <Variable name="MONODEVELOP_LOCALE_PATH" value="../locale" />
+        <Variable name="MONODEVELOP_TEST_PROFILE" value="./test-profile" />
       </EnvironmentVariables>
     </EnvironmentVariables>
     <PlatformTarget>x86</PlatformTarget>
     <Execution>
       <Execution clr-version="Net_2_0" />
     </Execution>
+    <GenerateDocumentation>true</GenerateDocumentation>
+    <NoWarn>1591;1573</NoWarn>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|x86' ">
-    <DebugType>none</DebugType>
-    <Optimize>False</Optimize>
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
     <OutputPath>bin\Release</OutputPath>
     <WarningLevel>4</WarningLevel>
+    <PlatformTarget>x86</PlatformTarget>
+    <DebugSymbols>true</DebugSymbols>
+    <GenerateDocumentation>true</GenerateDocumentation>
+    <NoWarn>1591;1573</NoWarn>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>True</DebugSymbols>
@@ -44,11 +50,8 @@
     <WarningLevel>4</WarningLevel>
     <EnvironmentVariables>
       <EnvironmentVariables>
-        <Variable name="MONO_ADDINS_REGISTRY" value="." />
         <Variable name="MONODEVELOP_LOCALE_PATH" value="../locale" />
-        <Variable name="XDG_DATA_HOME" value="./local" />
-        <Variable name="XDG_CONFIG_HOME" value="./local" />
-        <Variable name="XDG_CACHE_HOME" value="./local" />
+        <Variable name="MONODEVELOP_TEST_PROFILE" value="./test-profile" />
       </EnvironmentVariables>
     </EnvironmentVariables>
     <Execution>

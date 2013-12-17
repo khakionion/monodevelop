@@ -43,8 +43,7 @@ namespace Mono.TextEditor
 		public GutterMargin (TextEditor editor)
 		{
 			this.editor = editor;
-			
-			base.cursor = new Gdk.Cursor (Gdk.CursorType.RightPtr);
+
 			this.editor.Document.LineChanged += UpdateWidth;
 			this.editor.Document.TextSet += HandleEditorDocumenthandleTextSet;
 			this.editor.Caret.PositionChanged += EditorCarethandlePositionChanged;
@@ -124,8 +123,9 @@ namespace Mono.TextEditor
 				} else if (extendSelection) {
 					if (!editor.IsSomethingSelected) {
 						editor.MainSelection = new Selection (loc, loc);
-					} 
-					editor.MainSelection.Lead = loc;
+					} else {
+						editor.MainSelection = editor.MainSelection.WithLead (loc);
+					}
 				} else {
 					anchorLocation = loc;
 					editor.ClearSelection ();
@@ -195,61 +195,58 @@ namespace Mono.TextEditor
 
 		internal protected override void OptionsChanged ()
 		{
-			lineNumberBgGC = editor.ColorStyle.LineNumber.CairoBackgroundColor;
-			lineNumberGC = editor.ColorStyle.LineNumber.CairoColor;
-			gutterFont = Gtk.Widget.DefaultStyle.FontDescription.Copy ();
-			if (Platform.IsWindows) {
+			lineNumberBgGC = editor.ColorStyle.LineNumbers.Background;
+			lineNumberGC = editor.ColorStyle.LineNumbers.Foreground;
+			gutterFont = editor.Options.GutterFont;
+//			gutterFont.Weight = (Pango.Weight)editor.ColorStyle.LineNumbers.FontWeight;
+//			gutterFont.Style = (Pango.Style)editor.ColorStyle.LineNumbers.FontStyle;
+
+/*			if (Platform.IsWindows) {
 				gutterFont.Size = (int)(Pango.Scale.PangoScale * 8.0 * editor.Options.Zoom);
 			} else {
 				gutterFont.Size = (int)(Pango.Scale.PangoScale * 11.0 * editor.Options.Zoom);
-			}
+			}*/
 			CalculateWidth ();
+		}
+
+		void DrawGutterBackground (Cairo.Context cr, int line, double x, double y, double lineHeight)
+		{
+			if (editor.Caret.Line == line) {
+				editor.TextViewMargin.DrawCaretLineMarker (cr, x, y, Width, lineHeight);
+				return;
+			}
+			cr.Rectangle (x, y, Width, lineHeight);
+			cr.SetSourceColor (lineNumberBgGC);
+			cr.Fill ();
 		}
 
 		internal protected override void Draw (Cairo.Context cr, Cairo.Rectangle area, DocumentLine lineSegment, int line, double x, double y, double lineHeight)
 		{
-			var gutterMarker = lineSegment != null ? (IGutterMarker)lineSegment.Markers.FirstOrDefault (marker => marker is IGutterMarker) : null;
-			if (gutterMarker != null) {
-				gutterMarker.DrawLineNumber (editor, Width, cr, area, lineSegment, line, x, y, lineHeight);
+			var gutterMarker = lineSegment != null ? (MarginMarker)lineSegment.Markers.FirstOrDefault (marker => marker is MarginMarker && ((MarginMarker)marker).CanDraw (this)) : null;
+			if (gutterMarker != null && gutterMarker.CanDrawBackground (this)) {
+				bool hasDrawn = gutterMarker.DrawBackground (editor, cr, new MarginDrawMetrics (this, area, lineSegment, line, x, y, lineHeight));
+				if (!hasDrawn)
+					DrawGutterBackground (cr, line, x, y, lineHeight);
+			} else {
+				DrawGutterBackground (cr, line, x, y, lineHeight);
+			}
+
+			if (gutterMarker != null && gutterMarker.CanDrawForeground (this)) {
+				gutterMarker.DrawForeground (editor, cr, new MarginDrawMetrics (this, area, lineSegment, line, x, y, lineHeight));
 				return;
 			}
-			if (editor.Caret.Line == line) {
-				cr.Rectangle (x, y, Width, lineHeight);
-				cr.Color = lineNumberBgGC;
-				cr.FillPreserve ();
 
-				var color = editor.ColorStyle.LineMarker;
-				cr.Color = new Cairo.Color (color.R, color.G, color.B, 0.5);
-				cr.Fill ();
-
-				var realTopY = System.Math.Floor (y + cr.LineWidth / 2) + 0.5;
-				cr.MoveTo (x, realTopY);
-				cr.LineTo (x + Width, realTopY);
-
-				var realBottomY = System.Math.Floor (y + lineHeight - cr.LineWidth / 2) + 0.5;
-				cr.MoveTo (x, realBottomY);
-				cr.LineTo (x + Width, realBottomY);
-
-				cr.Color = color;
-				cr.Stroke ();
-			} else {
-				cr.Rectangle (x, y, Width, lineHeight);
-				cr.Color = lineNumberBgGC;
-				cr.Fill ();
-			}
-			
 			if (line <= editor.Document.LineCount) {
 				// Due to a mac? gtk bug I need to re-create the layout here
 				// otherwise I get pango exceptions.
 				using (var layout = PangoUtil.CreateLayout (editor)) {
 					layout.FontDescription = gutterFont;
-
 					layout.Width = (int)Width;
 					layout.Alignment = Pango.Alignment.Right;
 					layout.SetText (line.ToString ());
 					cr.Save ();
-					cr.Translate (x + (int)Width + (editor.Options.ShowFoldMargin ? 0 : -2), y + (lineHeight - fontHeight) / 2);
-					cr.Color = lineNumberGC;
+					cr.Translate (x + (int)Width + (editor.Options.ShowFoldMargin ? 0 : -2), y);
+					cr.SetSourceColor (lineNumberGC);
 					cr.ShowLayout (layout);
 					cr.Restore ();
 				}

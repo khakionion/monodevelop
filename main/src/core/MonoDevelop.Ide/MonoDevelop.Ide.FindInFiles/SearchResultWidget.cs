@@ -122,7 +122,7 @@ namespace MonoDevelop.Ide.FindInFiles
 			this.ShowAll ();
 			
 			var fileNameColumn = new TreeViewColumn {
-				Resizable = false,
+				Resizable = true,
 				SortColumnId = 0,
 				Title = GettextCatalog.GetString("File")
 			};
@@ -145,14 +145,14 @@ namespace MonoDevelop.Ide.FindInFiles
 			TreeViewColumn textColumn = treeviewSearchResults.AppendColumn (GettextCatalog.GetString ("Text"),
 				treeviewSearchResults.TextRenderer, ResultTextDataFunc);
 			textColumn.SortColumnId = 2;
-			textColumn.Resizable = false;
+			textColumn.Resizable = true;
 			textColumn.FixedWidth = 300;
 
 			
 			TreeViewColumn pathColumn = treeviewSearchResults.AppendColumn (GettextCatalog.GetString ("Path"),
 				treeviewSearchResults.TextRenderer, ResultPathDataFunc);
 			pathColumn.SortColumnId = 3;
-			pathColumn.Resizable = false;
+			pathColumn.Resizable = true;
 			pathColumn.FixedWidth = 500;
 
 			
@@ -199,8 +199,6 @@ namespace MonoDevelop.Ide.FindInFiles
 		protected override void OnStyleSet (Gtk.Style previousStyle)
 		{
 			base.OnStyleSet (previousStyle);
-			if (highlightStyle != null)
-				highlightStyle.UpdateFromGtkStyle (Style);
 		}
 
 		void ButtonPinClicked (object sender, EventArgs e)
@@ -269,12 +267,14 @@ namespace MonoDevelop.Ide.FindInFiles
 		
 		public void Reset ()
 		{
+			if (treeviewSearchResults.IsRealized)
+				treeviewSearchResults.ScrollToPoint (0, 0);
+
 			ResultCount = 0;
 			documents.Clear ();
 			store.Clear ();
 			labelStatus.Text = "";
 			textviewLog.Buffer.Clear ();
-			
 		}
 		
 		protected override void OnDestroyed ()
@@ -477,17 +477,21 @@ namespace MonoDevelop.Ide.FindInFiles
 				var data = new Mono.TextEditor.TextEditorData (doc);
 				data.ColorStyle = highlightStyle;
 				var lineText = doc.GetTextAt (line.Offset + indent, line.Length - indent);
-				var markup = doc.SyntaxMode != null ?
-					data.GetMarkup (line.Offset + indent, line.Length - indent, true, !isSelected, false) :
-					GLib.Markup.EscapeText (lineText);
-				searchResult.Markup = AdjustColors (markup.Replace ("\t", new string (' ', TextEditorOptions.DefaultOptions.TabSize)));
 				int col = searchResult.Offset - line.Offset - indent;
+				// search result contained part of the indent.
+				if (col + searchResult.Length < lineText.Length)
+					lineText = doc.GetTextAt (line.Offset, line.Length);
+
+				var markup = doc.SyntaxMode != null ?
+				data.GetMarkup (line.Offset + indent, line.Length - indent, true, !isSelected, false) :
+				GLib.Markup.EscapeText (lineText);
+				searchResult.Markup = AdjustColors (markup.Replace ("\t", new string (' ', TextEditorOptions.DefaultOptions.TabSize)));
 
 				uint start;
 				uint end;
 				try {
 					start = (uint)TextViewMargin.TranslateIndexToUTF8 (lineText, col);
-					end = (uint)TextViewMargin.TranslateIndexToUTF8 (lineText, col + searchResult.Length);
+					end = (uint)TextViewMargin.TranslateIndexToUTF8 (lineText, Math.Min (lineText.Length, col + searchResult.Length));
 				} catch (Exception e) {
 					LoggingService.LogError ("Exception while translating index to utf8 (column was:" +col + " search result length:" + searchResult.Length + " line text:" + lineText + ")", e);
 					return;
@@ -501,12 +505,12 @@ namespace MonoDevelop.Ide.FindInFiles
 				textRenderer.Markup = searchResult.Markup;
 
 				if (!isSelected) {
-					Color searchColor = Mono.TextEditor.Highlighting.ColorScheme.ToGdkColor (highlightStyle.SearchTextBg);
+					var searchColor = highlightStyle.SearchResult.Color;
 					double b1 = Mono.TextEditor.HslColor.Brightness (searchColor);
-					double b2 = Mono.TextEditor.HslColor.Brightness (AdjustColor (Style.Base (StateType.Normal), highlightStyle.Default.Color));
+					double b2 = Mono.TextEditor.HslColor.Brightness (AdjustColor (Style.Base (StateType.Normal), (Mono.TextEditor.HslColor)highlightStyle.PlainText.Foreground));
 					double delta = Math.Abs (b1 - b2);
 					if (delta < 0.1) {
-						Mono.TextEditor.HslColor color1 = highlightStyle.SearchTextBg;
+						Mono.TextEditor.HslColor color1 = highlightStyle.SearchResult.Color;
 						if (color1.L + 0.5 > 1.0) {
 							color1.L -= 0.5;
 						} else {
@@ -514,7 +518,7 @@ namespace MonoDevelop.Ide.FindInFiles
 						}
 						searchColor = color1;
 					}
-					var attr = new Pango.AttrBackground (searchColor.Red, searchColor.Green, searchColor.Blue);
+					var attr = new Pango.AttrBackground ((ushort)(searchColor.R * ushort.MaxValue), (ushort)(searchColor.G * ushort.MaxValue), (ushort)(searchColor.B * ushort.MaxValue));
 					attr.StartIndex = searchResult.StartIndex;
 					attr.EndIndex = searchResult.EndIndex;
 
@@ -750,8 +754,12 @@ namespace MonoDevelop.Ide.FindInFiles
 					return null;
 				
 				var buf = doc.GetContent<IEditableTextBuffer> ();
-				if (buf != null)
-					buf.SetCaretTo (Math.Max (Line, 1), Math.Max (Column, 1));
+				if (buf != null) {
+					doc.DisableAutoScroll ();
+					buf.RunWhenLoaded (() => {
+						buf.SetCaretTo (Math.Max (Line, 1), Math.Max (Column, 1));
+					});
+				}
 				
 				return doc;
 			}

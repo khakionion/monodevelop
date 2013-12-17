@@ -8,6 +8,7 @@ obj/
 /main/build/data/
 /main/build/locale/
 /extras/*/build
+/extras/*/*/bin
 /main/src/tools/SharpCoco/SharpCoco.exe*
 /main/vcrevision
 /main/tests/tmp
@@ -19,6 +20,14 @@ obj/
 /local-libs
 /main/build/tests
 /main/monodevelop_version
+/main/tests/TestResult.xml
+/main/tests/Ide.Tests/bin
+/main/src/addins/MonoDevelop.Debugger.Win32/CorApi/bin
+/main/src/addins/MonoDevelop.Debugger.Win32/CorApi2/bin
+
+#VS writes these sometimes even when it doesn't change anything
+/main/_UpgradeReport_Files
+/main/UpgradeLog.*
 
 # globs
 Makefile.in
@@ -68,7 +77,6 @@ test-results/
 main/external/Makefile
 /main/contrib/Makefile
 /main/contrib/Mono.Cecil/Makefile
-/main/contrib/NRefactory/Makefile
 /main/contrib/ICSharpCode.NRefactory.CSharp/Makefile
 /main/contrib/GitSharp/Makefile
 /main/contrib/Mono.Debugger.Soft/Makefile
@@ -126,6 +134,7 @@ main/external/Makefile
 /main/src/addins/VersionControl/MonoDevelop.VersionControl.Git/Makefile
 /main/src/addins/VersionControl/MonoDevelop.VersionControl.Subversion/Makefile
 /main/src/addins/VersionControl/MonoDevelop.VersionControl.Subversion.Unix/Makefile
+/main/src/addins/VersionControl/MonoDevelop.VersionControl.Subversion.Tests/Makefile
 /main/src/addins/VersionControl/MonoDevelop.VersionControl/Makefile
 /main/src/addins/WelcomePage/Makefile
 /main/src/addins/WindowsPlatform/Makefile
@@ -159,6 +168,7 @@ main/external/Makefile
 /main/tests/MacPlatform.Tests/Makefile
 /main/tests/MonoDevelop.MacDev.Tests/Makefile
 /main/tests/UserInterfaceTests/Makefile
+/main/src/addins/VersionControl/MonoDevelop.VersionControl.Git.Tests/Makefile
 
 # extras configure junk
 /extras/MonoDevelop.Database/INSTALL

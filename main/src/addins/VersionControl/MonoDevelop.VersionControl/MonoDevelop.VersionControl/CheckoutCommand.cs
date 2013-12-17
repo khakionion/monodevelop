@@ -10,6 +10,7 @@ namespace MonoDevelop.VersionControl
 		protected override void Update (CommandInfo info)
 		{
 			info.Enabled = VersionControlService.CheckVersionControlInstalled ();
+			info.Visible = !VersionControlService.IsGloballyDisabled;
 		}
 
 		protected override void Run()
@@ -46,26 +47,36 @@ namespace MonoDevelop.VersionControl
 		protected override IProgressMonitor CreateProgressMonitor ()
 		{
 			return new MonoDevelop.Core.ProgressMonitoring.AggregatedProgressMonitor (
-				new MonoDevelop.Ide.ProgressMonitoring.MessageDialogProgressMonitor (true, true, true, true),
-				base.CreateProgressMonitor ()
+				base.CreateProgressMonitor (),
+				new MonoDevelop.Ide.ProgressMonitoring.MessageDialogProgressMonitor (true, true, true, true)
 			);
 		}
 		
 		protected override void Run () 
 		{
 			vc.Checkout (path, null, true, Monitor);
+			if (Monitor.IsCancelRequested) {
+				Monitor.ReportSuccess (GettextCatalog.GetString ("Checkout operation cancelled"));
+				return;
+			}
+
+			if (!System.IO.Directory.Exists (path)) {
+				Monitor.ReportError (GettextCatalog.GetString ("Checkout folder does not exist"), null);
+				return;
+			}
+
 			string projectFn = null;
 			
 			string[] list = System.IO.Directory.GetFiles(path);
 			foreach (string str in list ) {
-				if (str.EndsWith(".mds")) {
+				if (str.EndsWith (".mds", System.StringComparison.Ordinal)) {
 					projectFn = str;
 					break;
 				}
 			}
 			if ( projectFn == null ) {
 				foreach ( string str in list ) {
-					if (str.EndsWith(".mdp")) {
+					if (str.EndsWith (".mdp", System.StringComparison.Ordinal)) {
 						projectFn = str;
 						break;
 					}

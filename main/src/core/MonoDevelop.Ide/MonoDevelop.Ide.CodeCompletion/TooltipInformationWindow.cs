@@ -109,8 +109,11 @@ namespace MonoDevelop.Ide.CodeCompletion
 
 			if (current_overload >= 0 && current_overload < overloads.Count) {
 				var o = overloads[current_overload];
+				headlabel.BreakOnCamelCasing = false;
+				headlabel.BreakOnPunctuation = false;
 				headlabel.Markup = o.SignatureMarkup;
 				headlabel.Visible = true;
+
 				if (Theme.DrawPager && overloads.Count > 1) {
 					headlabel.WidthRequest = headlabel.RealWidth + 70;
 				} else {
@@ -131,7 +134,7 @@ namespace MonoDevelop.Ide.CodeCompletion
 					contentLabel.MaxWidth = 400;
 					contentLabel.BreakOnPunctuation = true;
 					contentLabel.Markup = o.FooterMarkup.Trim ();
-					contentLabel.ModifyFg (StateType.Normal, foreColor);
+					contentLabel.ModifyFg (StateType.Normal, (HslColor)foreColor);
 
 					descriptionBox.PackEnd (contentLabel, true, true, 4);
 				}
@@ -204,7 +207,7 @@ namespace MonoDevelop.Ide.CodeCompletion
 
 			var catLabel = new MonoDevelop.Components.FixedWidthWrapLabel ();
 			catLabel.Text = categoryName;
-			catLabel.ModifyFg (StateType.Normal, foreColor);
+			catLabel.ModifyFg (StateType.Normal, (HslColor)foreColor);
 
 			vbox.PackStart (catLabel, false, true, 0);
 
@@ -214,7 +217,7 @@ namespace MonoDevelop.Ide.CodeCompletion
 			contentLabel.MaxWidth = 400;
 			contentLabel.BreakOnPunctuation = true;
 			contentLabel.Markup = categoryContentMarkup.Trim ();
-			contentLabel.ModifyFg (StateType.Normal, foreColor);
+			contentLabel.ModifyFg (StateType.Normal, (HslColor)foreColor);
 
 			vbox.PackStart (contentLabel, true, true, 0);
 
@@ -223,7 +226,7 @@ namespace MonoDevelop.Ide.CodeCompletion
 
 		VBox descriptionBox = new VBox (false, 0);
 		VBox vb2 = new VBox (false, 0);
-		Gdk.Color foreColor;
+		Cairo.Color foreColor;
 		public TooltipInformationWindow () : base ()
 		{
 			TypeHint = Gdk.WindowTypeHint.Tooltip;
@@ -235,6 +238,7 @@ namespace MonoDevelop.Ide.CodeCompletion
 			this.AllowGrow = false;
 			this.CanFocus = false;
 			this.CanDefault = false;
+			this.Events |= Gdk.EventMask.EnterNotifyMask; 
 			
 			headlabel = new MonoDevelop.Components.FixedWidthWrapLabel ();
 			headlabel.Indent = -20;
@@ -259,11 +263,10 @@ namespace MonoDevelop.Ide.CodeCompletion
 			ContentBox.Add (vb2);
 			var scheme = Mono.TextEditor.Highlighting.SyntaxModeService.GetColorStyle (IdeApp.Preferences.ColorScheme);
 			Theme.SetSchemeColors (scheme);
-			foreColor = scheme.Default.Color;
-			headlabel.ModifyFg (StateType.Normal, foreColor);
+			foreColor = scheme.PlainText.Foreground;
+			headlabel.ModifyFg (StateType.Normal, (HslColor)foreColor);
 			ShowAll ();
-			if (IdeApp.Workbench != null)
-				IdeApp.Workbench.Toolbar.RemoveDecorationsWorkaround (this);
+			DesktopService.RemoveWindowShadow (this);
 		}
 	}
 }

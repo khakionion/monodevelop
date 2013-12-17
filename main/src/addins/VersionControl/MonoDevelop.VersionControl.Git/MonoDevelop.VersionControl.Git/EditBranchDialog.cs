@@ -24,7 +24,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-using System;
 using System.Linq;
 using Gtk;
 using MonoDevelop.Core;
@@ -32,12 +31,12 @@ using MonoDevelop.Ide;
 
 namespace MonoDevelop.VersionControl.Git
 {
-	public partial class EditBranchDialog : Gtk.Dialog
+	public partial class EditBranchDialog : Dialog
 	{
-		ListStore comboStore;
-		string currentTracking;
-		string oldName;
-		GitRepository repo;
+		readonly ListStore comboStore;
+		readonly string currentTracking;
+		readonly string oldName;
+		readonly GitRepository repo;
 		
 		public EditBranchDialog (GitRepository repo, Branch branch, bool isNew)
 		{
@@ -46,10 +45,10 @@ namespace MonoDevelop.VersionControl.Git
 			
 			comboStore = new ListStore (typeof(string), typeof(Gdk.Pixbuf), typeof (string));
 			comboSources.Model = comboStore;
-			CellRendererPixbuf crp = new CellRendererPixbuf ();
+			var crp = new CellRendererPixbuf ();
 			comboSources.PackStart (crp, false);
 			comboSources.AddAttribute (crp, "pixbuf", 1);
-			CellRendererText crt = new CellRendererText ();
+			var crt = new CellRendererText ();
 			comboSources.PackStart (crt, true);
 			comboSources.AddAttribute (crt, "text", 2);
 			
@@ -58,8 +57,7 @@ namespace MonoDevelop.VersionControl.Git
 					oldName = branch.Name;
 				currentTracking = branch.Tracking;
 				entryName.Text = branch.Name;
-				if (currentTracking != null)
-					checkTrack.Active = true;
+				checkTrack.Active = currentTracking != null;
 			}
 			
 			foreach (Branch b in repo.GetBranches ()) {
@@ -107,10 +105,16 @@ namespace MonoDevelop.VersionControl.Git
 				labelError.Markup = "<span color='red'>" + GettextCatalog.GetString ("A branch with this name already exists") + "</span>";
 				labelError.Show ();
 				buttonOk.Sensitive = false;
+			} else if (!GitUtil.IsValidBranchName (entryName.Text)) {
+				labelError.Markup = "<span color='red'>" + GettextCatalog.GetString (@"A branch name can not:
+Start with '.' or end with '/' or '.lock'
+Contain a ' ', '..', '~', '^', ':', '\', '?', '['") + "</span>";
+				labelError.Show ();
+				buttonOk.Sensitive = false;
 			} else
 				labelError.Hide ();
 		}
-		
+
 		protected virtual void OnCheckTrackToggled (object sender, System.EventArgs e)
 		{
 			UpdateStatus ();

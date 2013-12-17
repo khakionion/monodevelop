@@ -7,11 +7,17 @@
 		<_Category>Misc</_Category>
 		<ProjectType>DotNet</ProjectType>
 		<_Description>Creates an empty resource file.</_Description>
+		<DefaultFilename>EmptyResourcefile</DefaultFilename>
 	</TemplateConfiguration>
 	
 	<TemplateFiles>
 		<ProjectResource>
-			<File DefaultExtension=".resx" DefaultName="EmptyResourcefile"/>
+				<File name="${Name}.resx" CustomTool="ResXFileCodeGenerator">
+		<![CDATA[<?xml version="1.0" encoding="utf-8"?>
+<root>
+</root>
+]]>
+		</File>
 		</ProjectResource>
 	</TemplateFiles>
 	

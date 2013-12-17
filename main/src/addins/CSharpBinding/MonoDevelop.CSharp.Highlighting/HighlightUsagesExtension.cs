@@ -27,26 +27,40 @@ using System;
 using MonoDevelop.Ide.Gui.Content;
 using Mono.TextEditor;
 using System.Collections.Generic;
-using Gdk;
-using MonoDevelop.CSharp.Resolver;
-using MonoDevelop.Projects.Text;
 using System.Linq;
 using MonoDevelop.Core;
 using MonoDevelop.Ide;
 using ICSharpCode.NRefactory.TypeSystem;
 using ICSharpCode.NRefactory.CSharp.Resolver;
 using MonoDevelop.Ide.FindInFiles;
-using MonoDevelop.SourceEditor;
 using ICSharpCode.NRefactory.Semantics;
 using ICSharpCode.NRefactory.CSharp;
-using ICSharpCode.NRefactory.CSharp.TypeSystem;
 using MonoDevelop.SourceEditor.QuickTasks;
+using MonoDevelop.Components;
+using Cairo;
 
 namespace MonoDevelop.CSharp.Highlighting
 {
-	public class HighlightUsagesExtension : TextEditorExtension, IUsageProvider
+	class HighlightUsagesExtension : TextEditorExtension, IUsageProvider
 	{
-		public readonly List<TextSegment> UsagesSegments = new List<TextSegment> ();
+		internal class UsageSegment
+		{
+			public readonly ReferenceUsageType UsageType;
+			public readonly TextSegment TextSegment;
+
+			public UsageSegment (ReferenceUsageType usageType, int offset, int length)
+			{
+				this.UsageType = usageType;
+				this.TextSegment = new TextSegment (offset, length);
+			}
+
+			public static implicit operator TextSegment (UsageSegment usage)
+			{
+				return usage.TextSegment;
+			}
+		}
+
+		public readonly List<UsageSegment> UsagesSegments = new List<UsageSegment> ();
 			
 		CSharpSyntaxMode syntaxMode;
 		TextEditorData textEditorData;
@@ -56,7 +70,7 @@ namespace MonoDevelop.CSharp.Highlighting
 			base.Initialize ();
 			
 			textEditorData = base.Document.Editor;
-			textEditorData.SelectionSurroundingProvider = new CSharpSelectionSurroundingProvider ();
+			textEditorData.SelectionSurroundingProvider = new CSharpSelectionSurroundingProvider (Document);
 			textEditorData.Caret.PositionChanged += HandleTextEditorDataCaretPositionChanged;
 			textEditorData.Document.TextReplaced += HandleTextEditorDataDocumentTextReplaced;
 			textEditorData.SelectionChanged += HandleTextEditorDataSelectionChanged;
@@ -89,7 +103,7 @@ namespace MonoDevelop.CSharp.Highlighting
 			RemoveTimer ();
 		}
 		
-		uint popupTimer = 0;
+		uint popupTimer;
 		
 		public bool IsTimerOnQueue {
 			get {
@@ -187,18 +201,17 @@ namespace MonoDevelop.CSharp.Highlighting
 							offset < sr.Offset && sr.EndOffset < endOffset)) {
 							editor.TextViewMargin.AlphaBlendSearchResults = alphaBlend = true;
 						}
-						UsagesSegments.Add (new TextSegment (offset, endOffset - offset));
-						marker.Usages.Add (new TextSegment (offset, endOffset - offset));
+						UsagesSegments.Add (new UsageSegment (r.ReferenceUsageType, offset, endOffset - offset));
+						marker.Usages.Add (new UsageSegment (r.ReferenceUsageType, offset, endOffset - offset));
 						lineNumbers.Add (r.Region.BeginLine);
 					}
 				}
 				foreach (int line in lineNumbers)
 					textEditorData.Document.CommitLineUpdate (line);
-				UsagesSegments.Sort ((x, y) => x.Offset.CompareTo (y.Offset));
+				UsagesSegments.Sort ((x, y) => x.TextSegment.Offset.CompareTo (y.TextSegment.Offset));
 			}
 			OnUsagesUpdated (EventArgs.Empty);
 		}
-
 
 		static readonly List<MemberReference> emptyList = new List<MemberReference> ();
 		IEnumerable<MemberReference> GetReferences (ResolveResult resolveResult)
@@ -211,9 +224,11 @@ namespace MonoDevelop.CSharp.Highlighting
 			} else if (resolveResult is MethodGroupResolveResult) { 
 				finder.SetSearchedMembers (((MethodGroupResolveResult)resolveResult).Methods);
 			} else if (resolveResult is NamespaceResolveResult) { 
-				finder.SetSearchedMembers (new [] { ((NamespaceResolveResult)resolveResult).NamespaceName });
+				finder.SetSearchedMembers (new [] { ((NamespaceResolveResult)resolveResult).Namespace });
 			} else if (resolveResult is LocalResolveResult) { 
 				finder.SetSearchedMembers (new [] { ((LocalResolveResult)resolveResult).Variable });
+			} else if (resolveResult is NamedArgumentResolveResult) { 
+				finder.SetSearchedMembers (new [] { ((NamedArgumentResolveResult)resolveResult).Parameter });
 			} else {
 				return emptyList;
 			}
@@ -255,63 +270,72 @@ namespace MonoDevelop.CSharp.Highlighting
 		}
 
 		
-		public class UsageMarker : TextLineMarker, IBackgroundMarker
+		public class UsageMarker : TextLineMarker
 		{
-			List<TextSegment> usages = new List<TextSegment> ();
+			List<UsageSegment> usages = new List<UsageSegment> ();
 
-			public List<TextSegment> Usages {
+			public List<UsageSegment> Usages {
 				get { return this.usages; }
 			}
 			
 			public bool Contains (int offset)
 			{
-				return usages.Any (u => u.Offset <= offset && offset <= u.EndOffset);
+				return usages.Any (u => u.TextSegment.Offset <= offset && offset <= u.TextSegment.EndOffset);
 			}
-			
-			public bool DrawBackground (TextEditor editor, Cairo.Context cr, TextViewMargin.LayoutWrapper layout, int selectionStart, int selectionEnd, int startOffset, int endOffset, double y, double startXPos, double endXPos, ref bool drawBg)
+
+			public override bool DrawBackground (TextEditor editor, Cairo.Context cr, double y, LineMetrics metrics)
 			{
-				drawBg = false;
-				if (selectionStart >= 0 || editor.CurrentMode is TextLinkEditMode || editor.TextViewMargin.SearchResultMatchCount > 0)
-					return true;
+				if (metrics.SelectionStart >= 0 || editor.CurrentMode is TextLinkEditMode || editor.TextViewMargin.SearchResultMatchCount > 0)
+					return false;
 				foreach (var usage in Usages) {
-					int markerStart = usage.Offset;
-					int markerEnd = usage.EndOffset;
+					int markerStart = usage.TextSegment.Offset;
+					int markerEnd = usage.TextSegment.EndOffset;
 					
-					if (markerEnd < startOffset || markerStart > endOffset) 
-						return true; 
+					if (markerEnd < metrics.TextStartOffset || markerStart > metrics.TextEndOffset) 
+						return false; 
 					
 					double @from;
 					double to;
 					
-					if (markerStart < startOffset && endOffset < markerEnd) {
-						@from = startXPos;
-						to = endXPos;
+					if (markerStart < metrics.TextStartOffset && metrics.TextEndOffset < markerEnd) {
+						@from = metrics.TextRenderStartPosition;
+						to = metrics.TextRenderEndPosition;
 					} else {
-						int start = startOffset < markerStart ? markerStart : startOffset;
-						int end = endOffset < markerEnd ? endOffset : markerEnd;
+						int start = metrics.TextStartOffset < markerStart ? markerStart : metrics.TextStartOffset;
+						int end = metrics.TextEndOffset < markerEnd ? metrics.TextEndOffset : markerEnd;
 						
 						uint curIndex = 0, byteIndex = 0;
-						TextViewMargin.TranslateToUTF8Index (layout.LineChars, (uint)(start - startOffset), ref curIndex, ref byteIndex);
+						TextViewMargin.TranslateToUTF8Index (metrics.Layout.LineChars, (uint)(start - metrics.TextStartOffset), ref curIndex, ref byteIndex);
 						
-						int x_pos = layout.Layout.IndexToPos ((int)byteIndex).X;
+						int x_pos = metrics.Layout.Layout.IndexToPos ((int)byteIndex).X;
 						
-						@from = startXPos + (int)(x_pos / Pango.Scale.PangoScale);
+						@from = metrics.TextRenderStartPosition + (int)(x_pos / Pango.Scale.PangoScale);
 						
-						TextViewMargin.TranslateToUTF8Index (layout.LineChars, (uint)(end - startOffset), ref curIndex, ref byteIndex);
-						x_pos = layout.Layout.IndexToPos ((int)byteIndex).X;
+						TextViewMargin.TranslateToUTF8Index (metrics.Layout.LineChars, (uint)(end - metrics.TextStartOffset), ref curIndex, ref byteIndex);
+						x_pos = metrics.Layout.Layout.IndexToPos ((int)byteIndex).X;
 			
-						to = startXPos + (int)(x_pos / Pango.Scale.PangoScale);
+						to = metrics.TextRenderStartPosition + (int)(x_pos / Pango.Scale.PangoScale);
 					}
 		
 					@from = System.Math.Max (@from, editor.TextViewMargin.XOffset);
 					to = System.Math.Max (to, editor.TextViewMargin.XOffset);
 					if (@from < to) {
-						cr.Color = (HslColor)editor.ColorStyle.UsagesHighlightRectangle.BackgroundColor;
-						cr.Rectangle (@from + 1, y + 1, to - @from - 1, editor.LineHeight - 2);
-						cr.Fill ();
+						Mono.TextEditor.Highlighting.AmbientColor colorStyle;
+						if ((usage.UsageType & ReferenceUsageType.Write) == ReferenceUsageType.Write) {
+							colorStyle = editor.ColorStyle.ChangingUsagesRectangle;
+						} else {
+							colorStyle = editor.ColorStyle.UsagesRectangle;
+						}
+
+						using (var lg = new LinearGradient (@from + 1, y + 1, to , y + editor.LineHeight)) {
+							lg.AddColorStop (0, colorStyle.Color);
+							lg.AddColorStop (1, colorStyle.SecondColor);
+							cr.SetSource (lg);
+							cr.RoundedRectangle (@from + 0.5, y + 1.5, to - @from - 1, editor.LineHeight - 2, editor.LineHeight / 4);
+							cr.FillPreserve ();
+						}
 						
-						cr.Color = (HslColor)editor.ColorStyle.UsagesHighlightRectangle.Color;
-						cr.Rectangle (@from + 0.5, y + 0.5, to - @from, editor.LineHeight - 1);
+						cr.SetSourceColor (colorStyle.BorderColor);
 						cr.Stroke ();
 					}
 				}

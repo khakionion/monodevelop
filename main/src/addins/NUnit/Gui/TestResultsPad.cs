@@ -44,7 +44,7 @@ using System.Text.RegularExpressions;
 
 namespace MonoDevelop.NUnit
 {
-	class TestResultsPad: IPadContent, ITestProgressMonitor
+	public class TestResultsPad: IPadContent, ITestProgressMonitor
 	{
 		NUnitService testService = NUnitService.Instance;
 		
@@ -129,7 +129,7 @@ namespace MonoDevelop.NUnit
 			sw.Add (failuresTreeView);
 			book.Pack1 (sw, true, true);
 			
-			outputView = new TextView ();
+			outputView = new MonoDevelop.Ide.Gui.Components.LogView.LogTextView ();
 			outputView.Editable = false;
 			bold = new TextTag ("bold");
 			bold.Weight = Pango.Weight.Bold;
@@ -254,6 +254,9 @@ namespace MonoDevelop.NUnit
 		
 		public void OnTestSuiteChanged (object sender, EventArgs e)
 		{
+			if (failuresTreeView.IsRealized)
+				failuresTreeView.ScrollToPoint (0, 0);
+
 			results.Clear ();
 			
 			error = null;
@@ -325,6 +328,9 @@ namespace MonoDevelop.NUnit
 			labels.Show ();
 			buttonStop.Sensitive = true;
 			buttonRun.Sensitive = false;
+
+			if (failuresTreeView.IsRealized)
+				failuresTreeView.ScrollToPoint (0, 0);
 			
 			failuresStore.Clear ();
 			outputView.Buffer.Clear ();
@@ -359,7 +365,7 @@ namespace MonoDevelop.NUnit
 		{
 			string msg = GettextCatalog.GetString ("Internal error");
 			if (errorMessage != null)
-				msg += ": " + errorMessage;
+				msg += ": " + Escape (errorMessage);
 
 			Gdk.Pixbuf stock = failuresTreeView.RenderIcon (Gtk.Stock.DialogError, Gtk.IconSize.Menu, "");
 			TreeIter testRow = failuresStore.AppendValues (stock, msg, null, null, 0);
@@ -558,6 +564,9 @@ namespace MonoDevelop.NUnit
 		
 		void RefreshList ()
 		{
+			if (failuresTreeView.IsRealized)
+				failuresTreeView.ScrollToPoint (0, 0);
+
 			failuresStore.Clear ();
 			outputView.Buffer.Clear ();
 			outIters.Clear ();
@@ -623,7 +632,14 @@ namespace MonoDevelop.NUnit
 				outputView.Buffer.Insert (ref it, result.ConsoleError);
 			outputView.ScrollMarkOnscreen (outputView.Buffer.InsertMark);
 		}
-		
+
+		void ITestProgressMonitor.WriteGlobalLog (string message)
+		{
+			TextIter it = outputView.Buffer.EndIter;
+			outputView.Buffer.Insert (ref it, message);
+			outputView.ScrollMarkOnscreen (outputView.Buffer.InsertMark);
+		}
+
 		string Escape (string s)
 		{
 			return GLib.Markup.EscapeText (s);
@@ -724,6 +740,12 @@ namespace MonoDevelop.NUnit
 		{
 			DispatchService.GuiDispatch (delegate {
 				monitor.ReportRuntimeError (message, exception);
+			});
+		}
+		public void WriteGlobalLog (string message)
+		{
+			DispatchService.GuiDispatch (delegate {
+				monitor.WriteGlobalLog (message);
 			});
 		}
 		public bool IsCancelRequested {

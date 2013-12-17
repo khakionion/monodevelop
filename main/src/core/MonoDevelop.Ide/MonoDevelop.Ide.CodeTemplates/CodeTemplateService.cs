@@ -52,7 +52,17 @@ namespace MonoDevelop.Ide.CodeTemplates
 			}
 			set {
 				templates = value ?? new List<CodeTemplate> ();
+				OnTemplatesChanged (EventArgs.Empty);
 			}
+		}
+
+		public static event EventHandler TemplatesChanged;
+
+		static void OnTemplatesChanged (EventArgs e)
+		{
+			var handler = TemplatesChanged;
+			if (handler != null)
+				handler (null, e);
 		}
 		
 		static CodeTemplateService ()
@@ -145,7 +155,7 @@ namespace MonoDevelop.Ide.CodeTemplates
 			}
 			foreach (CodeTemplate template in templates) {
 				if (string.IsNullOrEmpty (template.Shortcut)) {
-					LoggingService.LogError ("CodeTemplateService: Can't save unnamed template " + template);
+					LoggingService.LogUserError ("CodeTemplateService: Can't save unnamed template " + template);
 					continue;
 				}
 				SaveTemplate (template, Path.Combine (TemplatePath, template.Shortcut + ".template.xml"));

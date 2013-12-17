@@ -34,7 +34,6 @@ namespace MonoDevelop.Ide.FindInFiles
 {
 	public static class MemberCollector
 	{
-
 		static bool MatchParameters (IMember a, IMember b)
 		{
 			return MatchParameters (a as IParameterizedMember, b as IParameterizedMember);
@@ -76,11 +75,18 @@ namespace MonoDevelop.Ide.FindInFiles
 				yield return type;
 		}
 
-		static IEnumerable<IMember> GetMembers (ITypeDefinition type, string name, bool ignoreInherited,
+		static IEnumerable<IMember> GetMembers (ITypeDefinition type, IMember member, bool ignoreInherited,
 												Func<IMember, bool> filter)
 		{
 			var options = ignoreInherited ? GetMemberOptions.IgnoreInheritedMembers : GetMemberOptions.None;
-			var members = type.GetMembers (m => m.Name == name, options);
+			var members = type.GetMembers (m => m.Name == member.Name, options);
+
+/*			// Filter out shadowed members.
+			// class A { public string Foo { get; set; } } class B : A { public string Foo { get; set; } }
+			if (member.SymbolKind == SymbolKind.Property || !(member is IParameterizedMember)) {
+				members = members.Where (m => m == member || m.DeclaringType.Kind == TypeKind.Interface);
+			}*/
+
 			if (filter != null)
 				members = members.Where (filter);
 			return members;
@@ -98,12 +104,12 @@ namespace MonoDevelop.Ide.FindInFiles
 		public static IEnumerable<IMember> CollectMembers (Solution solution, IMember member, ReferenceFinder.RefactoryScope scope,
 														   bool includeOverloads = true, bool matchDeclaringType = false)
 		{
-			if (solution == null || member.EntityType == EntityType.Destructor || member.EntityType == EntityType.Operator)
+			if (solution == null || member.SymbolKind == SymbolKind.Destructor || member.SymbolKind == SymbolKind.Operator)
 				return new [] { member };
 
-			if (member.EntityType == EntityType.Constructor) {
+			if (member.SymbolKind == SymbolKind.Constructor) {
 				if (includeOverloads)
-					return member.DeclaringType.GetMembers (m => m.EntityType == EntityType.Constructor, GetMemberOptions.IgnoreInheritedMembers);
+					return member.DeclaringType.GetMembers (m => m.SymbolKind == SymbolKind.Constructor, GetMemberOptions.IgnoreInheritedMembers);
 				return new [] { member };
 			}
 
@@ -112,21 +118,23 @@ namespace MonoDevelop.Ide.FindInFiles
 				memberFilter = m => MatchParameters (m, member);
 
 			var declaringType = member.DeclaringTypeDefinition;
+			if (declaringType == null)
+				return new [] { member };
 			// only collect members in declaringType
 			if (matchDeclaringType)
-				return GetMembers (declaringType, member.Name, true, memberFilter);
+				return GetMembers (declaringType, member, true, memberFilter);
 
 			if (declaringType.Kind != TypeKind.Class && declaringType.Kind != TypeKind.Interface)
-				return GetMembers (declaringType, member.Name, false, memberFilter);
+				return GetMembers (declaringType, member, false, memberFilter);
 
 			var searchTypes = new List<ITypeDefinition> ();
 			var interfaces = from t in declaringType.GetAllBaseTypeDefinitions ()
-							 where t.Kind == TypeKind.Interface && GetMembers (t, member.Name, true, memberFilter).Any ()
+							 where t.Kind == TypeKind.Interface && GetMembers (t, member, true, memberFilter).Any ()
 							 select t;
 			searchTypes.AddRange (GetBaseTypes (interfaces));
 
 			if (member.DeclaringType.Kind == TypeKind.Class) {
-				var members = GetMembers (declaringType, member.Name, false, memberFilter).ToList ();
+				var members = GetMembers (declaringType, member, false, memberFilter).ToList ();
 				if (members.Any (m => m.IsOverridable))
 					searchTypes.AddRange (GetBaseTypes (members.Select (m => m.DeclaringTypeDefinition)));
 				else if (searchTypes.Count == 0)
@@ -159,12 +167,14 @@ namespace MonoDevelop.Ide.FindInFiles
 					foreach (var type in assembly.GetAllTypeDefinitions ()) {
 						// members in base types will also be added
 						// because IsDerivedFrom return true for a type itself
-						if (!searchedTypes.Add (type.ReflectionName) || !baseTypeImports.Any (baseType => type.IsDerivedFrom (baseType)))
+						if (!searchedTypes.Add (type.ReflectionName) || !baseTypeImports.Any (type.IsDerivedFrom))
 							continue;
-						result.AddRange (GetMembers (type, member.Name, true, memberFilter));
+						result.AddRange (GetMembers (type, member, true, memberFilter));
 					}
 				}
 			}
+			if (!result.Contains (member))
+				result.Add (member);
 			return result;
 		}
 	

@@ -37,10 +37,11 @@ using MonoDevelop.CSharp.Completion;
 using MonoDevelop.CSharp.Refactoring;
 using MonoDevelop.CSharp.Parser;
 using MonoDevelop.Core;
+using ICSharpCode.NRefactory.CSharp.Completion;
 
 namespace MonoDevelop.CSharp.Formatting
 {
-	public class OnTheFlyFormatter
+	static class OnTheFlyFormatter
 	{
 		public static void Format (MonoDevelop.Ide.Gui.Document data)
 		{
@@ -72,16 +73,8 @@ namespace MonoDevelop.CSharp.Formatting
 			Format (policyParent, mimeTypeChain, data, offset, offset, false, true);
 		}		
 		
-		/// <summary>
-		/// Builds a compileable stub file out of an entity.
-		/// </summary>
-		/// <returns>
-		/// A string representing the stub
-		/// </returns>
-		/// <param name='memberStartOffset'>
-		/// The offset where the member starts in the returned text.
-		/// </param>
-		static string BuildStub (MonoDevelop.Ide.Gui.Document data, CSharpCompletionTextEditorExtension.TypeSystemTreeSegment seg, int startOffset, int endOffset, out int memberStartOffset)
+
+		static string BuildStub (MonoDevelop.Ide.Gui.Document data, CSharpCompletionTextEditorExtension.TypeSystemTreeSegment seg, int endOffset, out int memberStartOffset)
 		{
 			var pf = data.ParsedDocument.ParsedFile as CSharpUnresolvedFile;
 			if (pf == null) {
@@ -119,8 +112,21 @@ namespace MonoDevelop.CSharp.Formatting
 			}
 
 			memberStartOffset = sb.Length;
-			sb.Append (data.Editor.GetTextBetween (seg.Offset, endOffset));
-			
+			var text = data.Editor.GetTextBetween (Math.Max (0, seg.Offset), endOffset);
+			sb.Append (text);
+
+			var lex = new CSharpCompletionEngineBase.MiniLexer (text);
+			lex.Parse (ch => {
+				if (lex.IsInString || lex.IsInChar || lex.IsInVerbatimString || lex.IsInSingleComment || lex.IsInMultiLineComment || lex.IsInPreprocessorDirective)
+					return;
+				if (ch =='{') {
+					closingBrackets++;
+				} else if (ch =='}') {
+					closingBrackets--;
+				}
+			});
+
+
 			// Insert at least caret column eol markers otherwise the reindent of the generated closing bracket
 			// could interfere with the current indentation.
 			var endLocation = data.Editor.OffsetToLocation (endOffset);
@@ -132,7 +138,7 @@ namespace MonoDevelop.CSharp.Formatting
 			return sb.ToString ();
 		}
 		
-		static AstFormattingVisitor GetFormattingChanges (PolicyContainer policyParent, IEnumerable<string> mimeTypeChain, MonoDevelop.Ide.Gui.Document document, string input, DomRegion formattingRegion, ref int formatStartOffset, ref int formatLength, bool formatLastStatementOnly)
+		static FormattingChanges GetFormattingChanges (PolicyContainer policyParent, IEnumerable<string> mimeTypeChain, MonoDevelop.Ide.Gui.Document document, string input, DomRegion formattingRegion, ref int formatStartOffset, ref int formatLength, bool formatLastStatementOnly)
 		{
 			using (var stubData = TextEditorData.CreateImmutable (input)) {
 				stubData.Document.FileName = document.FileName;
@@ -145,7 +151,6 @@ namespace MonoDevelop.CSharp.Formatting
 						hadErrors = parser.HasErrors;
 					}
 				}
-				
 				// try it out, if the behavior is better when working only with correct code.
 				if (hadErrors) {
 					return null;
@@ -153,19 +158,23 @@ namespace MonoDevelop.CSharp.Formatting
 				
 				var policy = policyParent.Get<CSharpFormattingPolicy> (mimeTypeChain);
 				
-				var formattingVisitor = new AstFormattingVisitor (policy.CreateOptions (), stubData.Document, document.Editor.CreateNRefactoryTextEditorOptions ()) {
-					HadErrors = hadErrors,
-					FormattingRegion = formattingRegion
-				};
+				var formattingVisitor = new ICSharpCode.NRefactory.CSharp.CSharpFormatter (policy.CreateOptions (), document.Editor.CreateNRefactoryTextEditorOptions ());
+				formattingVisitor.FormattingMode = FormattingMode.Intrusive;
+				formattingVisitor.AddFormattingRegion (formattingRegion);
 
-				compilationUnit.AcceptVisitor (formattingVisitor);
+
+				var changes = formattingVisitor.AnalyzeFormatting (stubData.Document, compilationUnit);
 
 				if (formatLastStatementOnly) {
 					AstNode node = compilationUnit.GetAdjacentNodeAt<Statement> (stubData.OffsetToLocation (formatStartOffset + formatLength - 1));
 					if (node != null) {
 						while (node.Role == Roles.EmbeddedStatement || node.Role == IfElseStatement.TrueRole || node.Role == IfElseStatement.FalseRole)
 							node = node.Parent;
-						var start = stubData.LocationToOffset (node.StartLocation);
+						// include indentation if node starts in new line
+						var formatNode = node.GetPrevNode ();
+						if (formatNode.Role != Roles.NewLine)
+							formatNode = node;
+						var start = stubData.LocationToOffset (formatNode.StartLocation);
 						if (start > formatStartOffset) {
 							var end = stubData.LocationToOffset (node.EndLocation);
 							formatStartOffset = start;
@@ -173,8 +182,7 @@ namespace MonoDevelop.CSharp.Formatting
 						}
 					}
 				}
-
-				return formattingVisitor;
+				return changes;
 			}
 		}
 		
@@ -187,21 +195,22 @@ namespace MonoDevelop.CSharp.Formatting
 				return;
 			string text;
 			int formatStartOffset, formatLength, realTextDelta;
-			DomRegion formattingRegion = DomRegion.Empty;
+			DomRegion formattingRegion;
 			int startDelta = 1;
 			if (exact) {
 				text = data.Editor.Text;
-				var seg = ext.typeSystemSegmentTree.GetMemberSegmentAt (startOffset);
-				var seg2 = ext.typeSystemSegmentTree.GetMemberSegmentAt (endOffset);
+				var seg = ext.GetMemberSegmentAt (startOffset);
+				var seg2 = ext.GetMemberSegmentAt (endOffset);
 				if (seg != null && seg == seg2) {
 					var member = seg.Entity;
 					if (member == null || member.Region.IsEmpty || member.BodyRegion.End.IsEmpty)
 						return;
 
-					text = BuildStub (data, seg, startOffset, endOffset, out formatStartOffset);
+					text = BuildStub (data, seg, endOffset, out formatStartOffset);
 					startDelta = startOffset - seg.Offset;
 					formatLength = endOffset - startOffset + startDelta;
 					realTextDelta = seg.Offset - formatStartOffset;
+					formattingRegion = new DomRegion (data.Editor.OffsetToLocation (formatStartOffset), data.Editor.OffsetToLocation (endOffset));
 				} else {
 					formatStartOffset = startOffset;
 					formatLength = endOffset - startOffset;
@@ -209,15 +218,17 @@ namespace MonoDevelop.CSharp.Formatting
 					formattingRegion = new DomRegion (data.Editor.OffsetToLocation (startOffset), data.Editor.OffsetToLocation (endOffset));
 				}
 			} else {
-				var seg = ext.typeSystemSegmentTree.GetMemberSegmentAt (startOffset - 1);
-				if (seg == null)
+				var seg = ext.GetMemberSegmentAt (startOffset - 1);
+				if (seg == null) {
 					return;
+				}
 				var member = seg.Entity;
-				if (member == null || member.Region.IsEmpty || member.BodyRegion.End.IsEmpty)
+				if (member == null)
 					return;
 	
 				// Build stub
-				text = BuildStub (data, seg, startOffset, endOffset, out formatStartOffset);
+				text = BuildStub (data, seg, startOffset, out formatStartOffset);
+				formattingRegion = new DomRegion (data.Editor.OffsetToLocation (formatStartOffset), data.Editor.OffsetToLocation (endOffset));
 
 				formatLength = endOffset - seg.Offset;
 				realTextDelta = seg.Offset - formatStartOffset;
@@ -230,7 +241,7 @@ namespace MonoDevelop.CSharp.Formatting
 			// Do the actual formatting
 //			var originalVersion = data.Editor.Document.Version;
 
-			using (var undo = data.Editor.OpenUndoGroup ()) {
+			using (var undo = data.Editor.OpenUndoGroup (OperationType.Format)) {
 				try {
 					changes.ApplyChanges (formatStartOffset + startDelta, Math.Max (0, formatLength - startDelta - 1), delegate (int replaceOffset, int replaceLength, string insertText) {
 						int translatedOffset = realTextDelta + replaceOffset;
@@ -238,7 +249,7 @@ namespace MonoDevelop.CSharp.Formatting
 						data.Editor.Replace (translatedOffset, replaceLength, insertText);
 					}, (replaceOffset, replaceLength, insertText) => {
 						int translatedOffset = realTextDelta + replaceOffset;
-						if (translatedOffset < 0 || translatedOffset + replaceLength > data.Editor.Length)
+						if (translatedOffset < 0 || translatedOffset + replaceLength > data.Editor.Length || replaceLength < 0)
 							return true;
 						return data.Editor.GetTextAt (translatedOffset, replaceLength) == insertText;
 					});

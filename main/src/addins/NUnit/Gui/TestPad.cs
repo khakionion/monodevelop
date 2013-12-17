@@ -42,6 +42,7 @@ using MonoDevelop.Components.Docking;
 using MonoDevelop.Ide;
 using MonoDevelop.Projects;
 using Mono.TextEditor;
+using System.Linq;
 
 namespace MonoDevelop.NUnit
 {
@@ -420,6 +421,33 @@ namespace MonoDevelop.NUnit
 			}
 		}
 		
+		[CommandHandler (TestCommands.DebugTest)]
+		protected void OnDebugTest (object data)
+		{
+			var debugModeSet = Runtime.ProcessService.GetDebugExecutionMode ();
+			var mode = debugModeSet.ExecutionModes.First (m => m.Id == (string)data);
+			RunSelectedTest (mode.ExecutionHandler);
+		}
+
+		[CommandUpdateHandler (TestCommands.DebugTest)]
+		protected void OnUpdateDebugTest (CommandArrayInfo info)
+		{
+			var debugModeSet = Runtime.ProcessService.GetDebugExecutionMode ();
+			if (debugModeSet == null)
+				return;
+
+			UnitTest test = GetSelectedTest ();
+			if (test == null)
+				return;
+
+			foreach (var mode in debugModeSet.ExecutionModes) {
+				if (test.CanRun (mode.ExecutionHandler))
+					info.Add (GettextCatalog.GetString ("Debug Test ({0})", mode.Name), mode.Id);
+			}
+			if (info.Count == 1)
+				info [0].Text = GettextCatalog.GetString ("Debug Test");
+		}
+
 		public TestPad ()
 		{
 			base.TreeView.CurrentItemActivated += delegate {
@@ -445,23 +473,30 @@ namespace MonoDevelop.NUnit
 				return null;
 			return nav.DataItem as UnitTest;
 		}
-		
-		void RunTest (ITreeNavigator nav, IExecutionHandler mode)
+
+		public IAsyncOperation RunTest (UnitTest test, IExecutionHandler mode)
+		{
+			return RunTest (FindTestNode (test), mode, false);
+		}
+
+		IAsyncOperation RunTest (ITreeNavigator nav, IExecutionHandler mode, bool bringToFront = true)
 		{
 			if (nav == null)
-				return;
+				return null;
 			UnitTest test = nav.DataItem as UnitTest;
 			if (test == null)
-				return;
-			TestSession.ResetResult (test.RootTest);
+				return null;
+			NUnitService.ResetResult (test.RootTest);
 			
 			this.buttonRun.Sensitive = false;
 			this.buttonRunAll.Sensitive = false;
 			this.buttonStop.Sensitive = true;
-			
-			IdeApp.Workbench.GetPad<TestPad> ().BringToFront ();
+
+			if (bringToFront)
+				IdeApp.Workbench.GetPad<TestPad> ().BringToFront ();
 			runningTestOperation = testService.RunTest (test, mode);
-			runningTestOperation.Completed += (OperationHandler) DispatchService.GuiDispatch (new OperationHandler (TestSessionCompleted));
+			runningTestOperation.Completed += (OperationHandler) DispatchService.GuiDispatch (new OperationHandler (OnTestSessionCompleted));
+			return runningTestOperation;
 		}
 		
 		void OnRunAllClicked (object sender, EventArgs args)
@@ -474,7 +509,7 @@ namespace MonoDevelop.NUnit
 			RunTest (TreeView.GetSelectedNode (), mode);
 		}
 		
-		void TestSessionCompleted (IAsyncOperation op)
+		void OnTestSessionCompleted (IAsyncOperation op)
 		{
 			if (op.Success)
 				RefreshDetails ();
@@ -482,8 +517,10 @@ namespace MonoDevelop.NUnit
 			this.buttonRun.Sensitive = true;
 			this.buttonRunAll.Sensitive = true;
 			this.buttonStop.Sensitive = false;
+
 		}
-		
+
+
 		protected override void OnSelectionChanged (object sender, EventArgs args)
 		{
 			base.OnSelectionChanged (sender, args);

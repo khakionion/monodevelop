@@ -26,11 +26,11 @@
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
 using System;
-using System.Xml;
-using System.Diagnostics;
-using System.ComponentModel;
+using System.Collections.Generic;
+
 using MonoDevelop.Projects;
 using MonoDevelop.Core.Serialization;
+using MonoDevelop.Core;
 
 namespace MonoDevelop.CSharp.Project
 {
@@ -67,9 +67,9 @@ namespace MonoDevelop.CSharp.Project
 		
 		[ItemProperty ("DefineConstants", DefaultValue = "")]
 		string definesymbols = String.Empty;
-		
-		[ItemProperty ("GenerateDocumentation", DefaultValue = false)]
-		bool generateXmlDocumentation = false;
+
+		[ProjectPathItemProperty ("DocumentationFile")]
+		FilePath documentationFile;
 		
 		[ItemProperty ("additionalargs", DefaultValue = "")]
 		string additionalArgs = string.Empty;
@@ -88,7 +88,9 @@ namespace MonoDevelop.CSharp.Project
 		
 		[ItemProperty("WarningsNotAsErrors", DefaultValue="")]
 		string warningsNotAsErrors = "";
-		
+
+		[ItemProperty("DebugType", DefaultValue="")]
+		string debugType = "";
 		
 		#region Members required for backwards compatibility. Not used for anything else.
 		
@@ -103,6 +105,9 @@ namespace MonoDevelop.CSharp.Project
 	
 		[ItemProperty ("CodePage", DefaultValue = null)]
 		internal string codePage;
+
+		[ItemProperty ("GenerateDocumentation", DefaultValue = null)]
+		bool? generateXmlDocumentation = null;
 		
 		#endregion
 		
@@ -131,6 +136,14 @@ namespace MonoDevelop.CSharp.Project
 					codePage = null;
 				}
 			}
+
+			if (generateXmlDocumentation.HasValue && ParentConfiguration != null) {
+				if (generateXmlDocumentation.Value)
+					documentationFile = ParentConfiguration.CompiledOutputName.ChangeExtension (".xml");
+				else
+					documentationFile = null;
+				generateXmlDocumentation = null;
+			}
 		}
 	
 		public string AdditionalArguments {
@@ -140,27 +153,52 @@ namespace MonoDevelop.CSharp.Project
 		
 		public LangVersion LangVersion {
 			get {
-				string val = langVersion.ToString ().Replace ('-','_'); 
-				return (LangVersion) Enum.Parse (typeof(LangVersion), val); 
+				var val = TryLangVersionFromString (langVersion);
+				if (val == null) {
+					throw new Exception ("Unknown LangVersion string '" + val + "'");
+				}
+				return val.Value;
 			}
 			set {
-				langVersion = value.ToString ().Replace ('_','-'); 
+				var v = TryLangVersionToString (value);
+				if (v == null) {
+					throw new ArgumentOutOfRangeException ("Unknown LangVersion enum value '" + value + "'");
+				}
+				langVersion = v;
 			}
 		}
 		
 		public override void AddDefineSymbol (string symbol)
 		{
-			definesymbols += symbol + ";";
+			var symbols = new List<string> (definesymbols.Split (new char[] { ';' }, StringSplitOptions.RemoveEmptyEntries));
+
+			symbols.Add (symbol);
+
+			definesymbols = string.Join (";", symbols) + ";";
 		}
 
 		public override bool HasDefineSymbol (string symbol)
 		{
-			return definesymbols.Contains (symbol);
+			var symbols = definesymbols.Split (new char[] { ';' });
+
+			foreach (var sym in symbols) {
+				if (sym == symbol)
+					return true;
+			}
+
+			return false;
 		}
 
 		public override void RemoveDefineSymbol (string symbol)
 		{
-			definesymbols = definesymbols.Replace (symbol + ";", "");
+			var symbols = new List<string> (definesymbols.Split (new char[] { ';' }, StringSplitOptions.RemoveEmptyEntries));
+
+			symbols.Remove (symbol);
+
+			if (symbols.Count > 0)
+				definesymbols = string.Join (";", symbols) + ";";
+			else
+				definesymbols = string.Empty;
 		}
 		
 #region Code Generation
@@ -201,12 +239,12 @@ namespace MonoDevelop.CSharp.Project
 			}
 		}
 		
-		public bool GenerateXmlDocumentation {
+		public FilePath DocumentationFile {
 			get {
-				return generateXmlDocumentation;
+				return documentationFile;
 			}
 			set {
-				generateXmlDocumentation = value;
+				documentationFile = value;
 			}
 		}
 		
@@ -218,7 +256,16 @@ namespace MonoDevelop.CSharp.Project
 				platformTarget = value ?? string.Empty;
 			}
 		}
-		
+
+		public string DebugType {
+			get {
+				return debugType;
+			}
+			set {
+				debugType = value;
+			}
+		}
+
 #endregion
 
 #region Errors and Warnings 
@@ -267,5 +314,31 @@ namespace MonoDevelop.CSharp.Project
 			}
 		}
 #endregion
+
+		static LangVersion? TryLangVersionFromString (string value)
+		{
+			switch (value) {
+			case "Default": return LangVersion.Default;
+			case "ISO-1": return LangVersion.ISO_1;
+			case "ISO-2": return LangVersion.ISO_2;
+			case "3": return LangVersion.Version3;
+			case "4": return LangVersion.Version4;
+			case "5": return LangVersion.Version5;
+			default: return null;
+			}
+		}
+
+		internal static string TryLangVersionToString (LangVersion value)
+		{
+			switch (value) {
+			case LangVersion.Default: return "Default";
+			case LangVersion.ISO_1: return "ISO-1";
+			case LangVersion.ISO_2: return "ISO-2";
+			case LangVersion.Version3: return "3";
+			case LangVersion.Version4: return "4";
+			case LangVersion.Version5: return "5";
+			default: return null;
+			}
+		}
 	}
 }

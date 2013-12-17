@@ -30,10 +30,12 @@ using MonoDevelop.Core;
 using MonoDevelop.Ide.Gui;
 using MonoDevelop.Components;
 using System.Collections.Generic;
+using Xwt.Motion;
+using Mono.TextEditor;
 
 namespace MonoDevelop.Ide.WelcomePage
 {
-	public class WelcomePageFirstRun : EventBox, Animatable
+	public class WelcomePageFirstRun : EventBox, IAnimatable
 	{
 		static readonly int Padding = 35;
 		static readonly Gdk.Size WidgetSize = new Gdk.Size (880 + 2 * Padding, 460 + 2 * Padding);
@@ -99,6 +101,9 @@ namespace MonoDevelop.Ide.WelcomePage
 					ButtonHovered = false;
 			};
 		}
+		
+		void IAnimatable.BatchBegin () { }
+		void IAnimatable.BatchCommit () { QueueDraw (); }
 
 		protected override void OnMapped ()
 		{
@@ -111,14 +116,14 @@ namespace MonoDevelop.Ide.WelcomePage
 
 			GLib.Timeout.Add (750, () => {
 				new Animation ()
-					.Insert (0, 0.5f,    new Animation ((f) => TitleOffset.Y = (int) (40 * f), start: 1, end: 0, easing: Easing.CubicInOut))
-					.Insert (0.1f, 0.6f, new Animation ((f) => TextOffset.Y  = (int) (40 * f), start: 1, end: 0, easing: Easing.CubicInOut))
-					.Insert (0, 0.5f,    new Animation ((f) => TitleOpacity = f,      easing: Easing.CubicInOut))
-					.Insert (0.1f, 0.6f, new Animation ((f) => TextOpacity = f,       easing: Easing.CubicInOut))
-					.Insert (0.3f, 0.9f, new Animation ((f) => ButtonOpacity = f,     easing: Easing.CubicInOut))
-					.Insert (0, 0.2f,    new Animation ((f) => BackgroundOpacity = f, easing: Easing.CubicInOut))
-					.Insert (0.2f, 0.7f, new Animation ((f) => IconOpacity = f,       easing: Easing.CubicInOut))
-					.Insert (0.2f, 0.7f, new Animation ((f) => IconScale = f, start: 0.5f, end: 1, easing: Easing.SpringOut))
+					.AddConcurrent (new Animation ((f) => TitleOffset.Y = (int) (40 * f), start: 1, end: 0, easing: Easing.CubicInOut), 0, 0.5f)
+					.AddConcurrent (new Animation ((f) => TextOffset.Y  = (int) (40 * f), start: 1, end: 0, easing: Easing.CubicInOut), 0.1f, 0.6f)
+					.AddConcurrent (new Animation ((f) => TitleOpacity = f,      easing: Easing.CubicInOut), 0, 0.5f)
+					.AddConcurrent (new Animation ((f) => TextOpacity = f,       easing: Easing.CubicInOut), 0.1f, 0.6f)
+					.AddConcurrent (new Animation ((f) => ButtonOpacity = f,     easing: Easing.CubicInOut), 0.3f, 0.9f)
+					.AddConcurrent (new Animation ((f) => BackgroundOpacity = f, easing: Easing.CubicInOut), 0, 0.2f)
+					.AddConcurrent (new Animation ((f) => IconOpacity = f,       easing: Easing.CubicInOut), 0.2f, 0.7f)
+					.AddConcurrent (new Animation ((f) => IconScale = f, start: 0.5f, end: 1, easing: Easing.SpringOut), 0.2f, 0.7f)
 					.Commit (this, "Intro", length: 1200);
 				return false;
 			});
@@ -134,7 +139,7 @@ namespace MonoDevelop.Ide.WelcomePage
 				lg.AddColorStop (0, new Cairo.Color (.36, .53, .73));
 				lg.AddColorStop (1, new Cairo.Color (.21, .37, .54));
 
-				context.Pattern = lg;
+				context.SetSource (lg);
 				context.FillPreserve ();
 			}
 
@@ -146,7 +151,7 @@ namespace MonoDevelop.Ide.WelcomePage
 			context.Restore ();
 
 			context.LineWidth = 1;
-			context.Color = new Cairo.Color (.29, .47, .67);
+			context.SetSourceRGB (.29, .47, .67);
 			context.Stroke ();
 
 		}
@@ -171,11 +176,11 @@ namespace MonoDevelop.Ide.WelcomePage
 		void RenderShadowedText (Cairo.Context context, Gdk.Point position, double opacity, Pango.Layout layout)
 		{
 			context.MoveTo (position.X, position.Y + 2);
-			context.Color = new Cairo.Color (0, 0, 0, 0.3 * opacity);
+			context.SetSourceRGBA (0, 0, 0, 0.3 * opacity);
 			Pango.CairoHelper.ShowLayout (context, layout);
 			
 			context.MoveTo (position.X, position.Y);
-			context.Color = new Cairo.Color (1, 1, 1, opacity);
+			context.SetSourceRGBA (1, 1, 1, opacity);
 			Pango.CairoHelper.ShowLayout (context, layout);
 		}
 
@@ -211,11 +216,11 @@ namespace MonoDevelop.Ide.WelcomePage
 					lg.AddColorStop (1, new Cairo.Color (.15, .76, .09, opacity));
 				}
 
-				context.Pattern = lg;
+				context.SetSource (lg);
 				context.FillPreserve ();
 			}
 
-			context.Color = new Cairo.Color (.29, .79, .28, opacity);
+			context.SetSourceRGBA (.29, .79, .28, opacity);
 			context.LineWidth = 1;
 			context.Stroke ();
 
@@ -228,7 +233,7 @@ namespace MonoDevelop.Ide.WelcomePage
 				lg.AddColorStop (0.9, new Cairo.Color (0, 0, 0, 0));
 				lg.AddColorStop (1, new Cairo.Color (0, 0, 0, .34 * opacity));
 
-				context.Pattern = lg;
+				context.SetSource (lg);
 				context.Stroke ();
 			}
 

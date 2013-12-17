@@ -24,6 +24,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+//#define PROFILE
+
 using System;
 using System.Collections.Generic;
 using Mono.Addins;
@@ -37,14 +39,16 @@ using System.Threading;
 using MonoDevelop.CodeActions;
 using MonoDevelop.CodeIssues;
 using Mono.TextEditor;
+using MonoDevelop.Ide.TypeSystem;
+using System.Diagnostics;
 
 namespace MonoDevelop.Refactoring
 {
 	public static class RefactoringService
 	{
-		static List<RefactoringOperation> refactorings = new List<RefactoringOperation>();
-		static List<CodeActionProvider> contextActions = new List<CodeActionProvider> ();
-		static List<CodeIssueProvider> inspectors = new List<CodeIssueProvider> ();
+		static readonly List<RefactoringOperation> refactorings = new List<RefactoringOperation>();
+		static readonly List<CodeActionProvider> contextActions = new List<CodeActionProvider> ();
+		static readonly List<CodeIssueProvider> inspectors = new List<CodeIssueProvider> ();
 		
 		public static IEnumerable<CodeActionProvider> ContextAddinNodes {
 			get {
@@ -100,7 +104,7 @@ namespace MonoDevelop.Refactoring
 					break;
 				}
 			});
-
+			
 			AddinManager.AddExtensionNodeHandler ("/MonoDevelop/Refactoring/CodeIssues", delegate(object sender, ExtensionNodeEventArgs args) {
 				switch (args.Change) {
 				case ExtensionChange.Add:
@@ -112,10 +116,12 @@ namespace MonoDevelop.Refactoring
 				}
 			});
 			
-		AddinManager.AddExtensionNodeHandler ("/MonoDevelop/Refactoring/CodeIssueSource", delegate(object sender, ExtensionNodeEventArgs args) {
+			AddinManager.AddExtensionNodeHandler ("/MonoDevelop/Refactoring/CodeIssueSource", delegate(object sender, ExtensionNodeEventArgs args) {
 				switch (args.Change) {
 				case ExtensionChange.Add:
-					inspectors.AddRange (((ICodeIssueProviderSource)args.ExtensionObject).GetProviders ());
+					var source = (ICodeIssueProviderSource)args.ExtensionObject;
+					var providers = source.GetProviders ();
+					inspectors.AddRange (providers);
 					break;
 				}
 			});
@@ -130,7 +136,7 @@ namespace MonoDevelop.Refactoring
 		
 		class RenameHandler 
 		{
-			IEnumerable<Change> changes;
+			readonly IEnumerable<Change> changes;
 			public RenameHandler (IEnumerable<Change> changes)
 			{
 				this.changes = changes;
@@ -159,6 +165,7 @@ namespace MonoDevelop.Refactoring
 			var rctx = new RefactoringOptions (null);
 			var handler = new RenameHandler (changes);
 			FileService.FileRenamed += handler.FileRename;
+			var fileNames = new HashSet<FilePath> ();
 			for (int i = 0; i < changes.Count; i++) {
 				changes[i].PerformChange (monitor, rctx);
 				var replaceChange = changes[i] as TextReplaceChange;
@@ -168,6 +175,7 @@ namespace MonoDevelop.Refactoring
 					var change = changes[j] as TextReplaceChange;
 					if (change == null)
 						continue;
+					fileNames.Add (change.FileName);
 					if (replaceChange.Offset >= 0 && change.Offset >= 0 && replaceChange.FileName == change.FileName) {
 						if (replaceChange.Offset < change.Offset) {
 							change.Offset -= replaceChange.RemovedChars;
@@ -180,6 +188,7 @@ namespace MonoDevelop.Refactoring
 					}
 				}
 			}
+			FileService.NotifyFilesChanged (fileNames);
 			FileService.FileRenamed -= handler.FileRename;
 			TextReplaceChange.FinishRefactoringOperation ();
 		}
@@ -189,49 +198,78 @@ namespace MonoDevelop.Refactoring
 			return inspectors.Where (i => i.MimeType == mimeType);
 		}
 
-		public static Task<IEnumerable<MonoDevelop.CodeActions.CodeAction>> GetValidActions (MonoDevelop.Ide.Gui.Document doc, TextLocation loc, CancellationToken cancellationToken = default (CancellationToken))
+		public static Task<IEnumerable<CodeAction>> GetValidActions (Document doc, TextLocation loc, CancellationToken cancellationToken = default (CancellationToken))
 		{
+			var editor = doc.Editor;
+			string disabledNodes = editor != null ? PropertyService.Get ("ContextActions." + editor.MimeType, "") ?? "" : "";
 			return Task.Factory.StartNew (delegate {
-				var result = new List<MonoDevelop.CodeActions.CodeAction> ();
+				var result = new List<CodeAction> ();
 				try {
-					var editor = doc.Editor;
-					if (editor != null && doc.ParsedDocument != null) {
-						var ctx = doc.ParsedDocument.CreateRefactoringContext (doc, cancellationToken);
+					#if PROFILE
+					var runList = new List<Tuple<long, string>> ();
+					var globalClock = new Stopwatch();
+					globalClock.Start ();
+
+					#endif
+
+					var parsedDocument = doc.ParsedDocument;
+					if (editor != null && parsedDocument != null && parsedDocument.CreateRefactoringContext != null) {
+						var ctx = parsedDocument.CreateRefactoringContext (doc, cancellationToken);
 						if (ctx != null) {
-							string disabledNodes = PropertyService.Get ("ContextActions." + editor.Document.MimeType, "") ?? "";
-							foreach (var provider in contextActions.Where (fix => disabledNodes.IndexOf (fix.IdString) < 0)) {
+							foreach (var provider in contextActions.Where (fix => disabledNodes.IndexOf (fix.IdString, StringComparison.Ordinal) < 0)) {
+								#if PROFILE
+								var clock = new Stopwatch();
+								clock.Start ();
+								#endif
 								try {
 									result.AddRange (provider.GetActions (doc, ctx, loc, cancellationToken));
 								} catch (Exception ex) {
 									LoggingService.LogError ("Error in context action provider " + provider.Title, ex);
 								}
+								#if PROFILE
+								clock.Stop ();
+								lock (runList) {
+									runList.Add (Tuple.Create (clock.ElapsedMilliseconds, provider.Title)); 
+								}
+								#endif
 							}
 						}
 					}
+					#if PROFILE
+					globalClock.Stop ();
+					runList.Sort ();
+					Console.WriteLine ("All: " + globalClock.ElapsedMilliseconds +"ms");
+					foreach (var item in runList) {
+						if (item.Item1 == 0)
+							continue;
+						Console.WriteLine (item.Item1 +"ms\t: " + item.Item2);
+					}
+					#endif
 				} catch (Exception ex) {
 					LoggingService.LogError ("Error in analysis service", ex);
 				}
-				return (IEnumerable<MonoDevelop.CodeActions.CodeAction>)result;
+				return (IEnumerable<CodeAction>)result;
 			}, cancellationToken);
 		}
 
-		public static void QueueQuickFixAnalysis (MonoDevelop.Ide.Gui.Document doc, TextLocation loc, CancellationToken token, Action<List<MonoDevelop.CodeActions.CodeAction>> callback)
+		public static void QueueQuickFixAnalysis (Document doc, TextLocation loc, CancellationToken token, Action<List<CodeAction>> callback)
 		{
-			System.Threading.ThreadPool.QueueUserWorkItem (delegate {
-				try {
-					var result = new List<MonoDevelop.CodeActions.CodeAction> ();
+			var ext = doc.GetContent<MonoDevelop.AnalysisCore.Gui.ResultsEditorExtension> ();
+			var issues = ext != null ? ext.GetResultsAtOffset (doc.Editor.LocationToOffset (loc), token).OrderBy (r => r.Level).ToList () : new List<Result> ();
 
-					var ext = doc.GetContent<MonoDevelop.AnalysisCore.Gui.ResultsEditorExtension> ();
-					if (ext != null) {
-						foreach (var r in ext.GetResultsAtOffset (doc.Editor.LocationToOffset (loc), token).OrderBy (r => r.Level)) {
-							if (token.IsCancellationRequested)
-								return;
-							var fresult = r as FixableResult;
-							if (fresult == null)
-								continue;
-							foreach (var action in FixOperationsHandler.GetActions (doc, fresult)) {
-								result.Add (new AnalysisContextActionProvider.AnalysisCodeAction (action, r));
-							}
+			ThreadPool.QueueUserWorkItem (delegate {
+				try {
+					var result = new List<CodeAction> ();
+					foreach (var r in issues) {
+						if (token.IsCancellationRequested)
+							return;
+						var fresult = r as FixableResult;
+						if (fresult == null)
+							continue;
+						foreach (var action in FixOperationsHandler.GetActions (doc, fresult)) {
+							result.Add (new AnalysisContextActionProvider.AnalysisCodeAction (action, r) {
+								DocumentRegion = action.DocumentRegion
+							});
 						}
 					}
 					result.AddRange (GetValidActions (doc, loc).Result);
@@ -242,10 +280,46 @@ namespace MonoDevelop.Refactoring
 			});
 		}	
 
+		public static IList<CodeAction> ApplyFixes (IEnumerable<CodeAction> fixes, IRefactoringContext refactoringContext)
+		{
+			if (fixes == null)
+				throw new ArgumentNullException ("fixes");
+			if (refactoringContext == null)
+				throw new ArgumentNullException ("refactoringContext");
+			var allFixes = fixes as IList<CodeAction> ?? fixes.ToArray ();
+			if (allFixes.Count == 0)
+				return new List<CodeAction> ();
+				
+			var scriptProvider = refactoringContext as IRefactoringContext;
+			if (scriptProvider == null) {
+				return RunAll (allFixes, refactoringContext, null);
+			}
+			using (var script = scriptProvider.CreateScript ()) {
+				return RunAll (allFixes, refactoringContext, script);
+			}
+		}
+		
+		public static void ApplyFix (CodeAction action, IRefactoringContext context)
+		{
+			using(var script = context.CreateScript ()) {
+				action.Run (context, script);
+			}
+		}
+
+		static List<CodeAction> RunAll (IEnumerable<CodeAction> allFixes, IRefactoringContext refactoringContext, object script)
+		{
+			var appliedFixes = new List<CodeAction> ();
+			foreach (var fix in allFixes) {
+				fix.Run (refactoringContext, script);
+				appliedFixes.Add (fix);
+			}
+			return appliedFixes;
+		}
+
 		public static DocumentLocation GetCorrectResolveLocation (Document doc, DocumentLocation location)
 		{
 			if (doc == null)
-				throw new ArgumentNullException ("doc");
+				return location;
 			var editor = doc.Editor;
 			if (editor == null || location.Column == 1)
 				return location;
@@ -260,6 +334,22 @@ namespace MonoDevelop.Refactoring
 			if (offset > 0 && !char.IsLetterOrDigit (doc.Editor.GetCharAt (offset)) && char.IsLetterOrDigit (doc.Editor.GetCharAt (offset - 1)))
 				return new DocumentLocation (location.Line, location.Column - 1);
 			return location;
+		}
+
+		static readonly CodeAnalysisBatchRunner runner = new CodeAnalysisBatchRunner();
+
+		/// <summary>
+		/// Queues a code analysis job.
+		/// </summary>
+		/// <param name="job">The job to queue.</param>
+		/// <param name="progressMessage">
+		/// The message used for a progress monitor, or null if no progress monitor should be used.
+		/// </param>
+		public static IJobContext QueueCodeIssueAnalysis(IAnalysisJob job, string progressMessage = null)
+		{
+			if (progressMessage != null)
+				job = new ProgressMonitorWrapperJob (job, progressMessage);
+			return runner.QueueJob (job);
 		}
 	}
 }

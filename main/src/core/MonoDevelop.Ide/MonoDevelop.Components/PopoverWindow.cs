@@ -29,10 +29,11 @@ using MonoDevelop.Ide;
 using MonoDevelop.Ide.Gui;
 using Mono.TextEditor;
 using Gdk;
+using Xwt.Motion;
 
 namespace MonoDevelop.Components
 {
-	public class PopoverWindow : Gtk.Window, Animatable
+	public class PopoverWindow : Gtk.Window, IAnimatable
 	{
 		PopoverWindowTheme theme;
 
@@ -140,6 +141,9 @@ namespace MonoDevelop.Components
 
 			RepositionWindow ();
 		}
+		
+		void IAnimatable.BatchBegin () { }
+		void IAnimatable.BatchCommit () { QueueDraw (); }
 
 		public void AnimatedResize ()
 		{
@@ -162,13 +166,13 @@ namespace MonoDevelop.Components
 
 			targetSize = size;
 			Gdk.Size start = paintSize;
-			Func<float, Gdk.Size> transform = x => new Gdk.Size ((int)(start.Width + (size.Width - start.Width) * x),
+			Func<double, Gdk.Size> transform = x => new Gdk.Size ((int)(start.Width + (size.Width - start.Width) * x),
 			                                                     (int)(start.Height + (size.Height - start.Height) * x));
 			this.Animate ("Resize",
+			              transform,
+			              s => paintSize = s,
 			              length: 150,
 			              easing: Easing.SinInOut,
-			              transform: transform,
-			              callback: s => paintSize = s,
 			              finished: (x, aborted) => { if (!aborted) MaybeReanimate(); });
 			QueueResize ();
 		}
@@ -311,11 +315,18 @@ namespace MonoDevelop.Components
 
 			Move (x, y);
 			Show ();
+			if (!ShowWindowShadow)
+				DesktopService.RemoveWindowShadow (this);
 		}
 		
 		public bool SupportsAlpha {
 			get;
 			private set;
+		}
+
+		public bool ShowWindowShadow {
+			get;
+			set;
 		}
 
 		void CheckScreenColormap ()
@@ -341,7 +352,7 @@ namespace MonoDevelop.Components
 			using (var context = Gdk.CairoHelper.Create (evnt.Window)) {
 				context.Save ();
 				if (SupportsAlpha) {
-					context.Operator = Cairo.Operator.DestIn;
+					context.Operator = Cairo.Operator.Source;
 					context.SetSourceRGBA (1, 1, 1, 0);
 				} else {
 					context.Operator = Cairo.Operator.Over;

@@ -20,15 +20,20 @@
     <WarningLevel>4</WarningLevel>
     <ConsolePause>False</ConsolePause>
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+    <GenerateDocumentation>true</GenerateDocumentation>
+    <NoWarn>1591;1573</NoWarn>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-    <DebugType>none</DebugType>
-    <Optimize>False</Optimize>
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
     <OutputPath>..\..\..\build\AddIns</OutputPath>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
     <ConsolePause>False</ConsolePause>
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+    <DebugSymbols>true</DebugSymbols>
+    <GenerateDocumentation>true</GenerateDocumentation>
+    <NoWarn>1591;1573</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System" />
@@ -59,10 +64,25 @@
       <Name>MonoDevelop.Ide</Name>
       <Private>False</Private>
     </ProjectReference>
+    <ProjectReference Include="..\..\..\external\xwt\Xwt\Xwt.csproj">
+      <Project>{92494904-35FA-4DC9-BDE9-3A3E87AC49D3}</Project>
+      <Name>Xwt</Name>
+      <Private>False</Private>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\external\xwt\Xwt.Mac\Xwt.Mac.csproj">
+      <Project>{B7C1673E-5124-4BE5-8D21-EC8B12F85B6B}</Project>
+      <Name>Xwt.Mac</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\external\mono-addins\Mono.Addins\Mono.Addins.csproj">
+      <Project>{91DD5A2D-9FE3-4C3C-9253-876141874DAD}</Project>
+      <Name>Mono.Addins</Name>
+      <Private>False</Private>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup />
   <ItemGroup>
     <Compile Include="AssemblyInfo.cs" />
+    <Compile Include="MacKeychainPasswordProvider.cs" />
     <Compile Include="MacPlatform.cs" />
     <Compile Include="Dialogs\MacAddFileDialogHandler.cs" />
     <Compile Include="Dialogs\MacOpenFileDialogHandler.cs" />
@@ -73,7 +93,6 @@
     <Compile Include="Dialogs\Layout.cs" />
     <Compile Include="Dialogs\MacAlertDialogHandler.cs" />
     <Compile Include="MacInterop\CoreFoundation.cs" />
-    <Compile Include="MacInterop\HIToolbox.cs" />
     <Compile Include="MacInterop\ApplicationEvents.cs" />
     <Compile Include="MacInterop\AppleEvent.cs" />
     <Compile Include="MacInterop\AppleScript.cs" />
@@ -82,13 +101,18 @@
     <Compile Include="MacInterop\LaunchServices.cs" />
     <Compile Include="MacInterop\ProcessManager.cs" />
     <Compile Include="MacInterop\Keychain.cs" />
-    <Compile Include="MacInterop\Cocoa.cs" />
     <Compile Include="MacIntegrationCommands.cs" />
     <Compile Include="MacExternalConsoleProcess.cs" />
-    <Compile Include="MacMainMenu.cs" />
     <Compile Include="MacInterop\Carbon.cs" />
     <Compile Include="MacInterop\AppleEvents\Native.cs" />
     <Compile Include="Dialogs\MacExceptionDialogHandler.cs" />
+    <Compile Include="MacMenu\MDLinkMenuItem.cs" />
+    <Compile Include="MacMenu\MDMenu.cs" />
+    <Compile Include="MacMenu\MDMenuItem.cs" />
+    <Compile Include="MacMenu\MDServicesMenuItem.cs" />
+    <Compile Include="MacMenu\MDSubMenuItem.cs" />
+    <Compile Include="AddinInfo.cs" />
+    <Compile Include="MacProxyCredentialProvider.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Makefile.am" />
@@ -106,5 +130,6 @@
     <Folder Include="Dialogs\" />
     <Folder Include="MacInterop\" />
     <Folder Include="MacInterop\AppleEvents\" />
+    <Folder Include="MacMenu\" />
   </ItemGroup>
 </Project>

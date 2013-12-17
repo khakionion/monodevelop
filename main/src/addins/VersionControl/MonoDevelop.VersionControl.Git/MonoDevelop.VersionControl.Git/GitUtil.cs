@@ -23,9 +23,7 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-using System;
 using System.IO;
-using System.Linq;
 using NGit;
 using System.Collections.Generic;
 using MonoDevelop.Core;
@@ -34,14 +32,12 @@ using NGit.Api.Errors;
 using NGit.Dircache;
 using NGit.Revwalk;
 using NGit.Treewalk;
-using NGit.Treewalk.Filter;
 using NGit.Api;
 using NGit.Merge;
-using NGit.Storage.File;
 using NGit.Transport;
 using NGit.Diff;
-using Mono.TextEditor.Utils;
 using NGit.Internal;
+using System;
 
 namespace MonoDevelop.VersionControl.Git
 {
@@ -106,7 +102,7 @@ namespace MonoDevelop.VersionControl.Git
 		
 		public static IEnumerable<DiffEntry> CompareCommits (NGit.Repository repo, AnyObjectId reference, ObjectId compared)
 		{
-			var diff = new NGit.Api.Git (repo).Diff ();
+			var diff = new MyersDiff (repo);
 
 			var firstTree = new CanonicalTreeParser ();
 			firstTree.Reset (repo.NewObjectReader (), new RevWalk (repo).ParseTree (reference));
@@ -194,12 +190,6 @@ namespace MonoDevelop.VersionControl.Git
 			}
 		}
 		
-		public static void Checkout (NGit.Repository repo, RevCommit commit, string working_directory)
-		{
-			DirCacheCheckout co = new DirCacheCheckout (repo, null, repo.ReadDirCache (), commit.Tree);
-			co.Checkout ();
-		}
-		
 		public static StashCollection GetStashes (NGit.Repository repo)
 		{
 			return new StashCollection (repo);
@@ -229,9 +219,9 @@ namespace MonoDevelop.VersionControl.Git
 			string rbranch = config.GetString ("branch", branch, "merge");
 			if (string.IsNullOrEmpty (rbranch))
 				return null;
-			if (rbranch.StartsWith (Constants.R_HEADS))
+			if (rbranch.StartsWith (Constants.R_HEADS, System.StringComparison.Ordinal))
 				rbranch = rbranch.Substring (Constants.R_HEADS.Length);
-			else if (rbranch.StartsWith (Constants.R_TAGS))
+			else if (rbranch.StartsWith (Constants.R_TAGS, System.StringComparison.Ordinal))
 				rbranch = rbranch.Substring (Constants.R_TAGS.Length);
 			if (!string.IsNullOrEmpty (remote) && remote != ".")
 				return remote + "/" + rbranch;
@@ -265,7 +255,7 @@ namespace MonoDevelop.VersionControl.Git
 			config.Save ();
 		}
 		
-		public static LocalGitRepository Init (string targetLocalPath, string url, IProgressMonitor monitor)
+		public static LocalGitRepository Init (string targetLocalPath, string url)
 		{
 			InitCommand ci = new InitCommand ();
 			ci.SetDirectory (targetLocalPath);
@@ -298,9 +288,9 @@ namespace MonoDevelop.VersionControl.Git
 			return repo;
 		}
 
-		public static MergeCommandResult MergeTrees (NGit.ProgressMonitor monitor, NGit.Repository repo, RevCommit srcBase, RevCommit srcCommit, string sourceDisplayName, bool commitResult)
+		public static MergeCommandResult MergeTrees (ProgressMonitor monitor, NGit.Repository repo, RevCommit srcBase, RevCommit srcCommit, string sourceDisplayName, bool commitResult)
 		{
-			RevCommit newHead = null;
+			RevCommit newHead;
 			RevWalk revWalk = new RevWalk(repo);
 			try
 			{
@@ -321,11 +311,11 @@ namespace MonoDevelop.VersionControl.Git
 				merger.SetBase(srcBase);
 				
 				bool noProblems;
-				IDictionary<string, MergeResult<NGit.Diff.Sequence>> lowLevelResults = null;
+				IDictionary<string, MergeResult<Sequence>> lowLevelResults = null;
 				IDictionary<string, ResolveMerger.MergeFailureReason> failingPaths = null;
 				IList<string> modifiedFiles = null;
 				
-				ResolveMerger resolveMerger = (ResolveMerger)merger;
+				ResolveMerger resolveMerger = merger;
 				resolveMerger.SetCommitNames(new string[] { "BASE", "HEAD", sourceDisplayName });
 				noProblems = merger.Merge(headCommit, srcCommit);
 				lowLevelResults = resolveMerger.GetMergeResults();
@@ -375,6 +365,27 @@ namespace MonoDevelop.VersionControl.Git
 			{
 				revWalk.Release();
 			}
+		}
+
+		internal static bool IsGitRepository (this FilePath path)
+		{
+			// Maybe check if it has a HEAD file? But this check should be enough.
+			var newPath = path.Combine (".git");
+			return Directory.Exists (newPath) && Directory.Exists (newPath.Combine ("objects")) && Directory.Exists (newPath.Combine ("refs"));
+		}
+
+		public static bool IsValidBranchName (string name)
+		{
+			// List from: https://github.com/git/git/blob/master/refs.c#L21
+			if (name.StartsWith (".", StringComparison.Ordinal) ||
+				name.EndsWith ("/", StringComparison.Ordinal) ||
+				name.EndsWith (".lock", StringComparison.Ordinal))
+				return false;
+
+			if (name.Contains (" ") || name.Contains ("~") || name.Contains ("..") || name.Contains ("^") ||
+				name.Contains (":") || name.Contains ("\\") || name.Contains ("?") || name.Contains ("["))
+				return false;
+			return true;
 		}
 	}
 }

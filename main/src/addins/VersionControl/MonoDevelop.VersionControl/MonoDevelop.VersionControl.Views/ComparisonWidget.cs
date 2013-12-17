@@ -26,7 +26,6 @@
 // THE SOFTWARE.
 
 using System;
-using System.Linq;
 using Gtk;
 using Gdk;
 using System.Collections.Generic;
@@ -70,8 +69,8 @@ namespace MonoDevelop.VersionControl.Views
 		protected override void CreateComponents ()
 		{
 			this.editors = new [] {
-				new TextEditor (new Mono.TextEditor.TextDocument (), new CommonTextEditorOptions ()),
-				new TextEditor (new Mono.TextEditor.TextDocument (), new CommonTextEditorOptions ()),
+				new TextEditor (new TextDocument (), new CommonTextEditorOptions ()),
+				new TextEditor (new TextDocument (), new CommonTextEditorOptions ()),
 			};
 
 			if (!viewOnly) {
@@ -99,7 +98,7 @@ namespace MonoDevelop.VersionControl.Views
 		}
 		
 		
-		public void GotoPrev () 
+		public void GotoNext () 
 		{
 			if (this.Diff == null)
 				return;
@@ -118,7 +117,7 @@ namespace MonoDevelop.VersionControl.Views
 			}
 		}
 		
-		public void GotoNext ()
+		public void GotoPrev ()
 		{
 			if (this.Diff == null)
 				return;

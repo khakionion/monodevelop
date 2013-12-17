@@ -1,4 +1,4 @@
-AC_INIT([monodevelop], 4.0.1, [monodevelop-list@lists.ximian.com])
+AC_INIT([monodevelop], 4.2.2, [monodevelop-list@lists.ximian.com])
 AC_PREREQ(2.53)
 AM_INIT_AUTOMAKE([1.10 tar-ustar])
 AM_MAINTAINER_MODE
@@ -12,7 +12,9 @@ ASSEMBLY_VERSION=4.0.0.0
 # the C# side of things. It should be one of the following two formats:
 # 1) "VERSION_NUMBER"					"2.0"
 # 2) "VERSION_NUMBER BUILD_TYPE BUILD_NUMBER"		"2.0 Alpha 1"
-PACKAGE_VERSION_LABEL="4.0.1"
+PACKAGE_VERSION_LABEL="4.2.2"
+
+COMPAT_ADDIN_VERSION=4.0
 
 AC_PATH_PROG(MONO, mono)
 AC_PATH_PROG(MCS, gmcs)
@@ -23,6 +25,14 @@ fi
 
 if test "x$MCS" = "x" ; then
   AC_MSG_ERROR([Can't find "gmcs" in your PATH])
+fi
+
+AC_PATH_PROG(PKG_CONFIG, pkg-config, no)
+
+MONO_REQUIRED_VERSION=3.0.4
+
+if ! $PKG_CONFIG --atleast-version=$MONO_REQUIRED_VERSION mono; then
+	AC_MSG_ERROR([You need mono $MONO_REQUIRED_VERSION or newer])
 fi
 
 #ensure we have the same env as when configured
@@ -96,14 +106,12 @@ Please see http://www.mono-project.org/ to download latest mono sources or packa
 fi
 
 if test "x$has_mono" = "xtrue"; then
+    AC_PATH_PROG(RUNTIME, mono, no)
+    AC_PATH_PROG(CSC, dmcs, no)
     if test `uname -s` = "Darwin"; then
-	AC_PATH_PROG(RUNTIME, mono, no)
-	AC_PATH_PROG(CSC, dmcs, no)
 	LIB_PREFIX=
 	LIB_SUFFIX=.dylib
     else
-	AC_PATH_PROG(RUNTIME, mono, no)
-	AC_PATH_PROG(CSC, dmcs, no)
 	LIB_PREFIX=.so
 	LIB_SUFFIX=
     fi
@@ -240,6 +248,7 @@ AC_SUBST(LIB_SUFFIX)
 AC_SUBST(LIB_PREFIX)
 AC_SUBST(ASSEMBLY_VERSION)
 AC_SUBST(PACKAGE_VERSION_LABEL)
+AC_SUBST(COMPAT_ADDIN_VERSION)
 AC_SUBST(SQLITE_XML)
 AC_SUBST(CSC_FLAGS)
 
@@ -262,18 +271,15 @@ AC_OUTPUT([
 build/Makefile
 build/MacOSX/Makefile
 contrib/Makefile
-contrib/Mono.Debugger.Soft/Makefile
-contrib/NRefactory/Makefile
 contrib/ICSharpCode.Decompiler/Makefile
 external/Makefile
 src/Makefile
 src/core/Makefile
 src/core/Mono.Texteditor/Makefile
-src/core/Mono.Debugging/Makefile
 src/core/MonoDevelop.Core/Makefile
+src/core/MonoDevelop.Core/BuildVariables.cs
 src/core/MonoDevelop.Projects.Formats.MSBuild/Makefile
 src/core/MonoDevelop.Ide/Makefile
-src/core/MonoDevelop.Ide/BuildVariables.cs
 src/core/MonoDevelop.Startup/Makefile
 src/tools/Makefile
 src/tools/mdhost/Makefile
@@ -288,7 +294,9 @@ src/addins/NUnit/NUnitRunner/Makefile
 src/addins/VersionControl/MonoDevelop.VersionControl/Makefile
 src/addins/VersionControl/MonoDevelop.VersionControl.Subversion/Makefile
 src/addins/VersionControl/MonoDevelop.VersionControl.Subversion.Unix/Makefile
+src/addins/VersionControl/MonoDevelop.VersionControl.Subversion.Tests/Makefile
 src/addins/VersionControl/MonoDevelop.VersionControl.Git/Makefile
+src/addins/VersionControl/MonoDevelop.VersionControl.Git.Tests/Makefile
 src/addins/VersionControl/Makefile
 src/addins/CSharpBinding/Makefile
 src/addins/CSharpBinding/Autotools/Makefile
@@ -326,7 +334,6 @@ src/addins/MonoDevelop.XmlEditor/Makefile
 src/addins/MonoDevelop.Refactoring/Makefile
 src/addins/MonoDevelop.Debugger/Makefile
 src/addins/MonoDevelop.Debugger.Soft/Makefile
-src/addins/MonoDevelop.Debugger.Soft/Mono.Debugging.Soft/Makefile
 src/addins/MonoDevelop.Debugger.Soft/MonoDevelop.Debugger.Soft/Makefile
 src/addins/MonoDevelop.Debugger.Soft/MonoDevelop.Debugger.Soft.AspNet/Makefile
 src/addins/MonoDevelop.HexEditor/Makefile

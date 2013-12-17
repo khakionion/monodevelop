@@ -1486,7 +1486,7 @@
       </widget>
     </child>
   </widget>
-  <widget class="Gtk.Bin" id="MonoDevelop.Ide.Gui.OptionPanels.BuildPanelWidget" design-size="471 266">
+  <widget class="Gtk.Bin" id="MonoDevelop.Ide.Gui.OptionPanels.BuildPanelWidget" design-size="471 274">
     <property name="MemberName" />
     <property name="GeneratePublic">False</property>
     <child>
@@ -1526,11 +1526,10 @@
           </packing>
         </child>
         <child>
-          <widget class="Gtk.CheckButton" id="checkXBuild">
+          <widget class="Gtk.CheckButton" id="buildBeforeTestCheckBox">
             <property name="MemberName" />
             <property name="CanFocus">True</property>
-            <property name="Label" translatable="yes">Compile projects using MSBuild / XBuild
-(this is an experimental feature and may not work for some projects)</property>
+            <property name="Label" translatable="yes">Build solution before executing unit tests</property>
             <property name="DrawIndicator">True</property>
             <property name="HasLabel">True</property>
             <property name="UseUnderline">True</property>
@@ -5592,7 +5591,7 @@ Diagnostic</property>
                   <widget class="Gtk.CheckButton" id="checkbuttonCaseSensitive">
                     <property name="MemberName" />
                     <property name="CanFocus">True</property>
-                    <property name="Label" translatable="yes">_Case sensitive</property>
+                    <property name="Label" translatable="yes">C_ase sensitive</property>
                     <property name="DrawIndicator">True</property>
                     <property name="HasLabel">True</property>
                     <property name="UseUnderline">True</property>
@@ -7764,6 +7763,22 @@ All solutions</property>
             <property name="Fill">False</property>
           </packing>
         </child>
+        <child>
+          <widget class="Gtk.CheckButton" id="delaySignCheckbutton">
+            <property name="MemberName" />
+            <property name="CanFocus">True</property>
+            <property name="Label" translatable="yes">_Delay sign assembly</property>
+            <property name="DrawIndicator">True</property>
+            <property name="HasLabel">True</property>
+            <property name="UseUnderline">True</property>
+          </widget>
+          <packing>
+            <property name="Position">2</property>
+            <property name="AutoSize">True</property>
+            <property name="Expand">False</property>
+            <property name="Fill">False</property>
+          </packing>
+        </child>
       </widget>
     </child>
   </widget>
@@ -8638,16 +8653,10 @@ All solutions</property>
                     <child>
                       <widget class="Gtk.Table" id="table11">
                         <property name="MemberName" />
-                        <property name="NRows">5</property>
+                        <property name="NRows">4</property>
                         <property name="NColumns">2</property>
                         <property name="RowSpacing">6</property>
                         <property name="ColumnSpacing">6</property>
-                        <child>
-                          <placeholder />
-                        </child>
-                        <child>
-                          <placeholder />
-                        </child>
                         <child>
                           <widget class="Gtk.Label" id="defaultNamespaceLabel">
                             <property name="MemberName" />
@@ -8976,6 +8985,60 @@ All solutions</property>
             <property name="Expand">False</property>
             <property name="Fill">False</property>
           </packing>
+        </child>
+        <child>
+          <widget class="Gtk.Label" id="msbuildHeaderLabel">
+            <property name="MemberName" />
+            <property name="Xalign">0</property>
+            <property name="LabelProp" translatable="yes">&lt;b&gt;Build Engine&lt;/b&gt;</property>
+            <property name="UseMarkup">True</property>
+            <property name="UseUnderline">True</property>
+          </widget>
+          <packing>
+            <property name="Position">2</property>
+            <property name="AutoSize">True</property>
+            <property name="Expand">False</property>
+            <property name="Fill">False</property>
+          </packing>
+        </child>
+        <child>
+          <widget class="Gtk.HBox" id="msbuildOptionsSection">
+            <property name="MemberName" />
+            <child>
+              <widget class="Gtk.Label" id="label51">
+                <property name="MemberName" />
+                <property name="WidthRequest">18</property>
+              </widget>
+              <packing>
+                <property name="Position">0</property>
+                <property name="AutoSize">False</property>
+                <property name="Expand">False</property>
+                <property name="Fill">False</property>
+              </packing>
+            </child>
+            <child>
+              <widget class="Gtk.CheckButton" id="msbuildCheck">
+                <property name="MemberName" />
+                <property name="Label" translatable="yes">Use MSBuild build engine (unsupported for this project type)</property>
+                <property name="DrawIndicator">True</property>
+                <property name="HasLabel">True</property>
+                <property name="UseUnderline">True</property>
+              </widget>
+              <packing>
+                <property name="Position">1</property>
+                <property name="AutoSize">True</property>
+              </packing>
+            </child>
+          </widget>
+          <packing>
+            <property name="Position">3</property>
+            <property name="AutoSize">True</property>
+            <property name="Expand">False</property>
+            <property name="Fill">False</property>
+          </packing>
+        </child>
+        <child>
+          <placeholder />
         </child>
       </widget>
     </child>
@@ -9677,15 +9740,15 @@ Visual Studio generates a default ID for embedded resources, instead of simply u
         <property name="MemberName" />
         <property name="BorderWidth">2</property>
         <child>
-          <widget class="Gtk.VBox" id="vbox2">
+          <widget class="Gtk.HPaned" id="hpaned1">
             <property name="MemberName" />
-            <property name="Spacing">6</property>
+            <property name="CanFocus">True</property>
+            <property name="Position">182</property>
             <property name="BorderWidth">6</property>
             <child>
-              <widget class="Gtk.HPaned" id="hpaned1">
+              <widget class="Gtk.VBox" id="vbox3">
                 <property name="MemberName" />
-                <property name="CanFocus">True</property>
-                <property name="Position">182</property>
+                <property name="Spacing">6</property>
                 <child>
                   <widget class="Gtk.ScrolledWindow" id="GtkScrolledWindow">
                     <property name="MemberName" />
@@ -9699,9 +9762,19 @@ Visual Studio generates a default ID for embedded resources, instead of simply u
                     </child>
                   </widget>
                   <packing>
-                    <property name="Resize">False</property>
+                    <property name="Position">0</property>
+                    <property name="AutoSize">False</property>
                   </packing>
                 </child>
+              </widget>
+              <packing>
+                <property name="Resize">False</property>
+              </packing>
+            </child>
+            <child>
+              <widget class="Gtk.VBox" id="vbox4">
+                <property name="MemberName" />
+                <property name="Spacing">6</property>
                 <child>
                   <widget class="Gtk.ScrolledWindow" id="GtkScrolledWindow1">
                     <property name="MemberName" />
@@ -9714,52 +9787,82 @@ Visual Studio generates a default ID for embedded resources, instead of simply u
                       </widget>
                     </child>
                   </widget>
-                </child>
-              </widget>
-              <packing>
-                <property name="Position">0</property>
-                <property name="AutoSize">True</property>
-              </packing>
-            </child>
-            <child>
-              <widget class="Gtk.HBox" id="typeBox">
-                <property name="MemberName" />
-                <property name="Visible">False</property>
-                <property name="Spacing">6</property>
-                <child>
-                  <widget class="Gtk.Label" id="label2">
-                    <property name="MemberName" />
-                    <property name="LabelProp" translatable="yes">File _type:</property>
-                    <property name="UseUnderline">True</property>
-                    <property name="MnemonicWidget">fileTypeCombo</property>
-                  </widget>
                   <packing>
                     <property name="Position">0</property>
                     <property name="AutoSize">True</property>
-                    <property name="Expand">False</property>
-                    <property name="Fill">False</property>
                   </packing>
                 </child>
                 <child>
-                  <widget class="Gtk.ComboBox" id="fileTypeCombo">
+                  <widget class="Gtk.HBox" id="hbox2">
                     <property name="MemberName" />
-                    <property name="IsTextCombo">True</property>
-                    <property name="Items" translatable="yes" />
+                    <property name="Spacing">6</property>
+                    <child>
+                      <widget class="Gtk.Button" id="AddFileButton">
+                        <property name="MemberName" />
+                        <property name="Tooltip" translatable="yes">Add existing files to the project</property>
+                        <property name="CanFocus">True</property>
+                        <property name="Type">TextAndIcon</property>
+                        <property name="Icon">stock:gtk-add Menu</property>
+                        <property name="Label" translatable="yes" />
+                        <property name="UseUnderline">True</property>
+                        <property name="Relief">None</property>
+                        <signal name="Clicked" handler="OnAddFileButtonClicked" />
+                      </widget>
+                      <packing>
+                        <property name="Position">0</property>
+                        <property name="AutoSize">True</property>
+                        <property name="Expand">False</property>
+                        <property name="Fill">False</property>
+                      </packing>
+                    </child>
+                    <child>
+                      <widget class="Gtk.HBox" id="typeBox">
+                        <property name="MemberName" />
+                        <property name="Visible">False</property>
+                        <property name="Spacing">6</property>
+                        <child>
+                          <widget class="Gtk.Label" id="label2">
+                            <property name="MemberName" />
+                            <property name="LabelProp" translatable="yes">File _type:</property>
+                            <property name="UseUnderline">True</property>
+                            <property name="MnemonicWidget">fileTypeCombo</property>
+                          </widget>
+                          <packing>
+                            <property name="Position">0</property>
+                            <property name="AutoSize">True</property>
+                            <property name="Expand">False</property>
+                            <property name="Fill">False</property>
+                          </packing>
+                        </child>
+                        <child>
+                          <widget class="Gtk.ComboBox" id="fileTypeCombo">
+                            <property name="MemberName" />
+                            <property name="IsTextCombo">True</property>
+                            <property name="Items" translatable="yes" />
+                          </widget>
+                          <packing>
+                            <property name="Position">1</property>
+                            <property name="AutoSize">True</property>
+                            <property name="Expand">False</property>
+                            <property name="Fill">False</property>
+                          </packing>
+                        </child>
+                      </widget>
+                      <packing>
+                        <property name="PackType">End</property>
+                        <property name="Position">1</property>
+                        <property name="AutoSize">False</property>
+                      </packing>
+                    </child>
                   </widget>
                   <packing>
                     <property name="Position">1</property>
-                    <property name="AutoSize">True</property>
+                    <property name="AutoSize">False</property>
                     <property name="Expand">False</property>
                     <property name="Fill">False</property>
                   </packing>
                 </child>
               </widget>
-              <packing>
-                <property name="Position">1</property>
-                <property name="AutoSize">True</property>
-                <property name="Expand">False</property>
-                <property name="Fill">False</property>
-              </packing>
             </child>
           </widget>
           <packing>
@@ -11944,19 +12047,6 @@ Visual Studio generates a default ID for embedded resources, instead of simply u
       <widget class="Gtk.VBox" id="vbox1">
         <property name="MemberName" />
         <property name="Spacing">6</property>
-        <child>
-          <widget class="Gtk.Label" id="labelTargetFrameworks">
-            <property name="MemberName" />
-            <property name="Xalign">0</property>
-            <property name="LabelProp" translatable="yes">Target Frameworks:</property>
-          </widget>
-          <packing>
-            <property name="Position">0</property>
-            <property name="AutoSize">True</property>
-            <property name="Expand">False</property>
-            <property name="Fill">False</property>
-          </packing>
-        </child>
         <child>
           <placeholder />
         </child>

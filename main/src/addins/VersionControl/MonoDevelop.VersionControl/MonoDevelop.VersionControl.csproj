@@ -20,9 +20,12 @@
     <Execution>
       <Execution clr-version="Net_2_0" />
     </Execution>
+    <GenerateDocumentation>true</GenerateDocumentation>
+    <DefineConstants>DEBUG</DefineConstants>
+    <NoWarn>1591;1573</NoWarn>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-    <DebugType>none</DebugType>
+    <DebugType>pdbonly</DebugType>
     <Optimize>True</Optimize>
     <OutputPath>..\..\..\..\build\AddIns\VersionControl\</OutputPath>
     <ErrorReport>prompt</ErrorReport>
@@ -30,6 +33,9 @@
     <Execution>
       <Execution clr-version="Net_2_0" />
     </Execution>
+    <DebugSymbols>true</DebugSymbols>
+    <GenerateDocumentation>true</GenerateDocumentation>
+    <NoWarn>1591;1573</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\core\MonoDevelop.Core\MonoDevelop.Core.csproj">
@@ -57,11 +63,6 @@
       <Name>MonoDevelop.DesignerSupport</Name>
       <Private>False</Private>
     </ProjectReference>
-    <ProjectReference Include="..\..\..\core\Mono.Debugging\Mono.Debugging.csproj">
-      <Project>{90C99ADB-7D4B-4EB4-98C2-40BD1B14C7D2}</Project>
-      <Name>Mono.Debugging</Name>
-      <Private>False</Private>
-    </ProjectReference>
     <ProjectReference Include="..\..\MonoDevelop.Debugger\MonoDevelop.Debugger.csproj">
       <Project>{2357AABD-08C7-4808-A495-8FF2D3CDFDB0}</Project>
       <Name>MonoDevelop.Debugger</Name>
@@ -75,6 +76,16 @@
     <ProjectReference Include="..\..\..\..\external\mono-addins\Mono.Addins\Mono.Addins.csproj">
       <Project>{91DD5A2D-9FE3-4C3C-9253-876141874DAD}</Project>
       <Name>Mono.Addins</Name>
+      <Private>False</Private>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\..\external\debugger-libs\Mono.Debugging\Mono.Debugging.csproj">
+      <Project>{90C99ADB-7D4B-4EB4-98C2-40BD1B14C7D2}</Project>
+      <Name>Mono.Debugging</Name>
+      <Private>False</Private>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\..\external\xwt\Xwt\Xwt.csproj">
+      <Project>{92494904-35FA-4DC9-BDE9-3A3E87AC49D3}</Project>
+      <Name>Xwt</Name>
       <Private>False</Private>
     </ProjectReference>
   </ItemGroup>
@@ -153,12 +164,10 @@
     <Compile Include="MonoDevelop.VersionControl.Views\CellRendererDiff.cs" />
     <Compile Include="MonoDevelop.VersionControl.Views\LogView.cs" />
     <Compile Include="MonoDevelop.VersionControl.Views\StatusView.cs" />
-    <Compile Include="MonoDevelop.VersionControl.Views\AnnotateView.cs" />
     <Compile Include="MonoDevelop.VersionControl.Dialogs\CommitDialog.cs" />
     <Compile Include="MonoDevelop.VersionControl.Dialogs\EditRepositoryDialog.cs" />
     <Compile Include="MonoDevelop.VersionControl.Dialogs\SelectRepositoryDialog.cs" />
     <Compile Include="MonoDevelop.VersionControl\AddRemoveMoveCommand.cs" />
-    <Compile Include="MonoDevelop.VersionControl\AnnotateCommand.cs" />
     <Compile Include="MonoDevelop.VersionControl\BaseView.cs" />
     <Compile Include="MonoDevelop.VersionControl\ChangeSet.cs" />
     <Compile Include="MonoDevelop.VersionControl\CheckoutCommand.cs" />
@@ -230,6 +239,9 @@
     <Compile Include="MonoDevelop.VersionControl\MergeCommand.cs" />
     <Compile Include="MonoDevelop.VersionControl\BlameCommand.cs" />
     <Compile Include="MonoDevelop.VersionControl\VersionInfoCache.cs" />
+    <Compile Include="MonoDevelop.VersionControl\IgnoreCommand.cs" />
+    <Compile Include="MonoDevelop.VersionControl\ResolveConflictsCommand.cs" />
+    <Compile Include="MonoDevelop.VersionControl.Dialogs\VersionControlGeneralOptionsPanel.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Makefile.am" />

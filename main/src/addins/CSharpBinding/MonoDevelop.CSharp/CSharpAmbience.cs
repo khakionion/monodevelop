@@ -41,7 +41,7 @@ using ICSharpCode.NRefactory.TypeSystem.Implementation;
 
 namespace MonoDevelop.CSharp
 {
-	public class CSharpAmbience : Ambience
+	class CSharpAmbience : Ambience
 	{
 		static Dictionary<string, string> netToCSharpTypes = new Dictionary<string, string> ();
 		static HashSet<string> keywords = new HashSet<string> (new [] {
@@ -338,20 +338,19 @@ namespace MonoDevelop.CSharp
 				return;
 			}
 			
-			var pt = type as ParameterizedType;
-			if (pt != null) {
-				if (pt.Name == "Nullable" && pt.Namespace == "System" && pt.TypeParameterCount == 1) {
-					AppendType (sb, pt.TypeArguments [0], settings);
+			if (type.TypeArguments.Count > 0) {
+				if (type.Name == "Nullable" && type.Namespace == "System" && type.TypeParameterCount == 1) {
+					AppendType (sb, type.TypeArguments [0], settings);
 					sb.Append (settings.Markup ("?"));
 					return;
 				}
-				sb.Append (pt.Name);
-				if (pt.TypeParameterCount > 0) {
+				sb.Append (type.Name);
+				if (type.TypeParameterCount > 0) {
 					sb.Append (settings.Markup ("<"));
-					for (int i = 0; i < pt.TypeParameterCount; i++) {
+					for (int i = 0; i < type.TypeParameterCount; i++) {
 						if (i > 0)
 							sb.Append (settings.Markup (", "));
-						AppendType (sb, pt.TypeArguments [i], settings);
+						AppendType (sb, type.TypeArguments [i], settings);
 					}
 					sb.Append (settings.Markup (">"));
 				}
@@ -527,8 +526,8 @@ namespace MonoDevelop.CSharp
 					if (i > 0)
 						result.Append (settings.Markup (settings.HideGenericParameterNames ? "," : ", "));
 					if (!settings.HideGenericParameterNames) {
-						if (t is ParameterizedType) {
-							result.Append (GetTypeReferenceString (((ParameterizedType)t).TypeArguments [i], settings));
+						if (t.TypeArguments.Count > 0) {
+							result.Append (GetTypeReferenceString (t.TypeArguments [i], settings));
 						} else {
 							AppendVariance (result, type.TypeParameters [i].Variance);
 							result.Append (NetToCSharpTypeName (type.TypeParameters [i].FullName));
@@ -641,7 +640,7 @@ namespace MonoDevelop.CSharp
 				result.Append (settings.Markup ("."));
 			}
 			AppendExplicitInterfaces (result, method, settings);
-			if (method.EntityType == EntityType.Operator) {
+			if (method.SymbolKind == SymbolKind.Operator) {
 				result.Append ("operator ");
 				result.Append (settings.Markup (GetOperator (methodName)));
 			} else {
@@ -684,7 +683,7 @@ namespace MonoDevelop.CSharp
 
 		protected override string GetMethodString (IMethod method, OutputSettings settings)
 		{
-			return InternalGetMethodString (method, settings, settings.EmitName (method, Format (FilterName (method.EntityType == EntityType.Constructor || method.EntityType == EntityType.Destructor ? method.DeclaringTypeDefinition.Name : method.Name))), true);
+			return InternalGetMethodString (method, settings, settings.EmitName (method, Format (FilterName (method.SymbolKind == SymbolKind.Constructor || method.SymbolKind == SymbolKind.Destructor ? method.DeclaringTypeDefinition.Name : method.Name))), true);
 		}
 
 		protected override string GetConstructorString (IMethod method, OutputSettings settings)
@@ -774,7 +773,7 @@ namespace MonoDevelop.CSharp
 			
 			AppendExplicitInterfaces (result, property, settings);
 			
-			if (property.EntityType == EntityType.Indexer) {
+			if (property.SymbolKind == SymbolKind.Indexer) {
 				result.Append (settings.EmitName (property, "this"));
 			} else {
 				result.Append (settings.EmitName (property, Format (FilterName (property.Name))));

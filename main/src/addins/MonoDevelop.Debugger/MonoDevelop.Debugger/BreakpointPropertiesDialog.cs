@@ -26,6 +26,8 @@
 //
 
 using System;
+using System.Collections.Generic;
+
 using MonoDevelop.Core;
 using Mono.Debugging.Client;
 using MonoDevelop.Projects;
@@ -73,7 +75,7 @@ namespace MonoDevelop.Debugger
 				// Function breakpoints only support breaking on the first line
 				hboxLineColumn.Destroy ();
 				labelLine.Destroy ();
-				table1.NRows--;
+				tableLocation.NRows--;
 			} else {
 				labelFileFunction.LabelProp = GettextCatalog.GetString ("File:");
 				entryFileFunction.Text = ((Breakpoint) bp).FileName;
@@ -83,7 +85,7 @@ namespace MonoDevelop.Debugger
 				entryFileFunction.ModifyBase (Gtk.StateType.Active, Style.Backgrounds [(int)Gtk.StateType.Insensitive]);
 				entryFileFunction.IsEditable = false;
 				
-				//spinColumn.Value = bp.Column;
+				spinColumn.Value = bp.Column;
 				spinLine.Value = bp.Line;
 				
 				if (!isNew) {
@@ -92,9 +94,6 @@ namespace MonoDevelop.Debugger
 					spinLine.IsEditable = false;
 					spinLine.Sensitive = false;
 				}
-				
-				// Note: We hide the column spin button for now because we don't support it yet
-				hboxColumn.Hide ();
 			}
 			
 			if (string.IsNullOrEmpty (bp.ConditionExpression)) {
@@ -102,18 +101,20 @@ namespace MonoDevelop.Debugger
 			} else {
 				entryCondition.Text = bp.ConditionExpression;
 				if (bp.BreakIfConditionChanges)
-					radioBreakChange.Active = true;
+					radioBreakWhenChanges.Active = true;
 				else
-					radioBreakTrue.Active = true;
+					radioBreakWhenTrue.Active = true;
 			}
-			
+
+			comboHitCountMode.Changed += OnHitCountModeChanged;
+			comboHitCountMode.Active = (int) bp.HitCountMode;
 			spinHitCount.Value = bp.HitCount;
 			
-			if (bp.HitAction == HitAction.Break)
+			if (bp.HitAction == HitAction.Break) {
 				radioActionBreak.Active = true;
-			else {
+			} else {
 				radioActionTrace.Active = true;
-				entryTraceExpr.Text = bp.TraceExpression;
+				entryTraceExpression.Text = bp.TraceExpression;
 			}
 			
 			Project project = null;
@@ -123,9 +124,9 @@ namespace MonoDevelop.Debugger
 			if (project != null) {
 				// Check the startup project of the solution too, since the current project may be a library
 				SolutionEntityItem startup = project.ParentSolution.StartupItem;
-				boxConditionOptions.Sensitive = DebuggingService.IsFeatureSupported (project, DebuggerFeatures.ConditionalBreakpoints) ||
+				vboxConditionOptions.Sensitive = DebuggingService.IsFeatureSupported (project, DebuggerFeatures.ConditionalBreakpoints) ||
 					DebuggingService.IsFeatureSupported (startup, DebuggerFeatures.ConditionalBreakpoints);
-				boxAction.Sensitive = DebuggingService.IsFeatureSupported (project, DebuggerFeatures.Tracepoints) ||
+				vboxAction.Sensitive = DebuggingService.IsFeatureSupported (project, DebuggerFeatures.Tracepoints) ||
 					DebuggingService.IsFeatureSupported (startup, DebuggerFeatures.Tracepoints);
 			}
 			
@@ -135,37 +136,40 @@ namespace MonoDevelop.Debugger
 		void UpdateControls ()
 		{
 			boxTraceExpression.Sensitive = radioActionTrace.Active;
-			boxCondition.Sensitive = !radioBreakAlways.Active;
+			hboxConditionExpression.Sensitive = !radioBreakAlways.Active;
+
+			if (comboHitCountMode.Active == 0)
+				spinHitCount.Hide ();
+			else
+				spinHitCount.Show ();
 		}
 		
-		bool TryParseFunction (string signature, out string function, out string[] paramTypes)
+		static bool TryParseFunction (string signature, out string function, out string[] paramTypes)
 		{
-			// FIXME: this is a hack, but it'll work until we get actual language parsers...
 			int paramListStart = signature.IndexOf ('(');
-			int paramListEnd;
-			
-			if (paramListStart == -1) {
+			int paramListEnd = signature.IndexOf (')');
+
+			if (paramListStart == -1 && paramListEnd == -1) {
 				function = signature;
 				paramTypes = null;
 				return true;
 			}
-			
-			function = signature.Substring (0, paramListStart).TrimEnd ();
-			
-			paramListStart++;
-			paramListEnd = paramListStart;
-			while (paramListEnd < signature.Length && signature[paramListEnd] != ')')
-				paramListEnd++;
-			
-			if (paramListEnd == signature.Length) {
-				function = null;
+
+			if (paramListEnd != signature.Length - 1) {
 				paramTypes = null;
+				function = null;
 				return false;
 			}
 			
-			paramTypes = signature.Substring (paramListStart, paramListEnd - paramListStart).Split (new char [] { ',' });
-			for (int i = 0; i < paramTypes.Length; i++)
-				paramTypes[i] = paramTypes[i].Trim ();
+			function = signature.Substring (0, paramListStart).Trim ();
+			
+			paramListStart++;
+
+			if (!FunctionBreakpoint.TryParseParameters (signature, paramListStart, paramListEnd, out paramTypes)) {
+				paramTypes = null;
+				function = null;
+				return false;
+			}
 			
 			return true;
 		}
@@ -173,12 +177,14 @@ namespace MonoDevelop.Debugger
 		public bool Check ()
 		{
 			if (bp is FunctionBreakpoint) {
-				if (entryFileFunction.Text.Length == 0) {
+				string text = entryFileFunction.Text.Trim ();
+
+				if (text.Length == 0) {
 					MessageService.ShowError (GettextCatalog.GetString ("Function name not specified"));
 					return false;
 				}
-				
-				if (!TryParseFunction (entryFileFunction.Text.Trim (), out parsedFunction, out parsedParamTypes)) {
+
+				if (!TryParseFunction (text, out parsedFunction, out parsedParamTypes)) {
 					MessageService.ShowError (GettextCatalog.GetString ("Invalid function syntax"));
 					return false;
 				}
@@ -189,7 +195,7 @@ namespace MonoDevelop.Debugger
 				return false;
 			}
 			
-			if (radioActionTrace.Active && entryTraceExpr.Text.Length == 0) {
+			if (radioActionTrace.Active && entryTraceExpression.Text.Length == 0) {
 				MessageService.ShowError (GettextCatalog.GetString ("Trace expression not specified"));
 				return false;
 			}
@@ -206,29 +212,34 @@ namespace MonoDevelop.Debugger
 					fb.FunctionName = parsedFunction;
 					fb.ParamTypes = parsedParamTypes;
 				} else {
-					//bp.SetColumn ((int) spinColumn.Value);
+					bp.SetColumn ((int) spinColumn.Value);
 					bp.SetLine ((int) spinLine.Value);
 				}
 			}
 			
 			if (!radioBreakAlways.Active) {
 				bp.ConditionExpression = entryCondition.Text;
-				bp.BreakIfConditionChanges = radioBreakChange.Active;
+				bp.BreakIfConditionChanges = radioBreakWhenChanges.Active;
 			} else
 				bp.ConditionExpression = null;
+
+			bp.HitCountMode = (HitCountMode) comboHitCountMode.Active;
+			if (bp.HitCountMode != HitCountMode.None)
+				bp.HitCount = (int) spinHitCount.Value;
+			else
+				bp.HitCount = 0;
 			
-			bp.HitCount = (int) spinHitCount.Value;
-			
-			if (radioActionBreak.Active)
+			if (radioActionBreak.Active) {
 				bp.HitAction = HitAction.Break;
-			else {
+			} else {
 				bp.HitAction = HitAction.PrintExpression;
-				bp.TraceExpression = entryTraceExpr.Text;
+				bp.TraceExpression = entryTraceExpression.Text;
 			}
+
 			bp.CommitChanges ();
 		}
 
-		protected virtual void OnButtonOkClicked (object sender, System.EventArgs e)
+		protected virtual void OnButtonOkClicked (object sender, EventArgs e)
 		{
 			if (Check ()) {
 				Save ();
@@ -236,12 +247,17 @@ namespace MonoDevelop.Debugger
 			}
 		}
 
-		protected virtual void OnRadioBreakAlwaysToggled (object sender, System.EventArgs e)
+		protected virtual void OnRadioBreakAlwaysToggled (object sender, EventArgs e)
 		{
 			UpdateControls ();
 		}
 
-		protected virtual void OnRadioActionBreakToggled (object sender, System.EventArgs e)
+		protected virtual void OnRadioActionBreakToggled (object sender,EventArgs e)
+		{
+			UpdateControls ();
+		}
+
+		void OnHitCountModeChanged (object sender, EventArgs e)
 		{
 			UpdateControls ();
 		}

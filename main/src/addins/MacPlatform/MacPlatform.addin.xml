@@ -1,23 +1,10 @@
-<Addin id          = "MacPlatform"
-       namespace   = "MonoDevelop"
-       name        = "MonoDevelop Mac Platform Support"
-       author      = "Geoff Norton, Michael Hutchinson"
-       copyright   = "MIT X11"
-       url         = "http://monodevelop.com/"
-       description = "Mac Platform Support for MonoDevelop"
-       category    = "Platform Support"
-       flags       = "Hidden"
-       version     = "4.0.1">
+<ExtensionModel>
 	
 	<Runtime>
 		<Import assembly="MonoMac.dll" />
 		<ScanExclude path="MonoMac.dll" />
 	</Runtime>
 
-	<Dependencies>
-	    <Addin id="Ide" version="4.0.1"/>
-	</Dependencies>
-	
 	<Extension path = "/MonoDevelop/Core/PlatformService">
 		<Condition id = "Platform" value = "mac">
 			<Class id      = "PlatformService"
@@ -45,6 +32,10 @@
 		</Condition>
 	</Extension>
 	
+	<Extension path = "/MonoDevelop/Ide/Commands/Hidden">
+		<Command id = "MonoDevelop.MacIntegration.MacIntegrationCommands.Services" _label="Services" />
+	</Extension>
+
 	<Extension path = "/MonoDevelop/Ide/MainMenu/Window">
 		<Condition id = "Platform" value = "mac">
 			<CommandItem id = "MonoDevelop.MacIntegration.MacIntegrationCommands.MinimizeWindow"
@@ -54,6 +45,8 @@
 	
 	<Extension path="/MonoDevelop/Ide/AppMenu">
 		<Condition id = "Platform" value = "mac">
+			<SeparatorItem id = "ServicesSeparator" insertbefore="QuitSeparator" />
+			<CommandItem id = "MonoDevelop.MacIntegration.MacIntegrationCommands.Services" />
 			<SeparatorItem id = "HideSeparator" insertbefore="QuitSeparator" />
 			<CommandItem id = "MonoDevelop.MacIntegration.MacIntegrationCommands.HideWindow" />
 			<CommandItem id = "MonoDevelop.MacIntegration.MacIntegrationCommands.HideOthers" />
@@ -69,4 +62,12 @@
 			<Class class="MonoDevelop.MacIntegration.MacExceptionDialogHandler" />
 		</Condition>
 	</Extension>
-</Addin>
+
+	<Extension path = "/MonoDevelop/Core/PasswordProvider">
+		<Class class = "MonoDevelop.MacIntegration.MacKeychainPasswordProvider" />
+	</Extension>
+	
+	<Extension path = "/MonoDevelop/Core/WebCredentialProviders">
+		<Class class = "MonoDevelop.MacIntegration.MacProxyCredentialProvider" />
+	</Extension>
+</ExtensionModel>

@@ -61,7 +61,6 @@ namespace MonoDevelop.Core.Assemblies
 		RuntimeAssemblyContext assemblyContext;
 		ComposedAssemblyContext composedAssemblyContext;
 		ITimeTracker timer;
-		SynchronizationContext mainContext;
 		TargetFramework[] customFrameworks = new TargetFramework[0];
 		
 		protected bool ShuttingDown { get; private set; }
@@ -88,23 +87,9 @@ namespace MonoDevelop.Core.Assemblies
 		
 		internal void StartInitialization ()
 		{
-			// Store the main sync context, since we'll need later on for subscribing
-			// add-in extension points (Mono.Addins isn't currently thread safe)
-			mainContext = SynchronizationContext.Current;
-			
-			// If there is no custom threading context, we can't use background initialization since
-			// we have no main thread into which to dispatch
-			backgroundInitialize = mainContext != null && mainContext.GetType () != typeof (SynchronizationContext);
-			
-			if (backgroundInitialize) {
-				// Initialize the service in a background thread.
-				initializing = true;
-				Thread t = new Thread (new ThreadStart (BackgroundInitialize)) {
-					Name = "Assembly service initialization",
-					IsBackground = true,
-				};
-				t.Start ();
-			}
+			backgroundInitialize = true;
+			initializing = true;
+			ThreadPool.QueueUserWorkItem (BackgroundInitialize);
 		}
 		
 		/// <summary>
@@ -250,7 +235,7 @@ namespace MonoDevelop.Core.Assemblies
 				if (!IsInstalled (fx)) {
 					// Look for a compatible framework which is installed
 					foreach (TargetFramework f in Runtime.SystemAssemblyService.GetTargetFrameworks ()) {
-						if (IsInstalled (f) && f.IsCompatibleWithFramework (fx.Id)) {
+						if (IsInstalled (f) && f.CanReferenceAssembliesTargetingFramework (fx)) {
 							fx = f;
 							break;
 						}
@@ -296,7 +281,20 @@ namespace MonoDevelop.Core.Assemblies
 		{
 			return GetBackend (fx).GetFrameworkFolders ();
 		}
-		
+
+		public IEnumerable<string> FindFacadeAssembliesForPCL (TargetFramework tx)
+		{
+			foreach (var folder in GetFrameworkFolders (tx)) {
+				var facades = Path.Combine (folder, "Facades");
+				if (!Directory.Exists (facades))
+					continue;
+
+				return Directory.GetFiles (facades, "*.dll");
+			}
+
+			return new string[0];
+		}
+
 		/// <summary>
 		/// Returns a list of environment variables that should be set when running tools using this runtime
 		/// </summary>
@@ -368,7 +366,7 @@ namespace MonoDevelop.Core.Assemblies
 				if (!initialized && !initializing) {
 					if (!backgroundInitialize) {
 						initializing = true;
-						BackgroundInitialize ();
+						BackgroundInitialize (null);
 					}
 					else
 						// If we are here, that's because 1) the runtime has been initialized, or 2) the runtime is being initialized by *this* thread
@@ -383,14 +381,13 @@ namespace MonoDevelop.Core.Assemblies
 			}
 		}
 		
-		void BackgroundInitialize ()
+		void BackgroundInitialize (object state)
 		{
 			timer = Counters.TargetRuntimesLoading.BeginTiming ("Initializing Runtime " + Id);
 			lock (initLock) {
 				try {
 					RunInitialization ();
 				} catch (Exception ex) {
-					LogReporting.LogReportingService.ReportUnhandledException (ex, false);
 					LoggingService.LogFatalError ("Unhandled exception in SystemAssemblyService background initialisation thread.", ex);
 				} finally {
 					lock (initEventLock) {
@@ -481,7 +478,7 @@ namespace MonoDevelop.Core.Assemblies
 		/// Set to true if this package is provided by an add-in and is not installed in the system.
 		/// </param>
 		/// <param name="assemblyFiles">
-		/// A <see cref="System.String[]"/>
+		/// The assemblies of the package.
 		/// </param>
 		/// <returns>
 		/// A <see cref="SystemPackage"/>
@@ -510,7 +507,7 @@ namespace MonoDevelop.Core.Assemblies
 		{
 			var frameworks = new HashSet<TargetFrameworkMoniker> ();
 			
-			foreach (TargetFramework fx in Runtime.SystemAssemblyService.GetCoreFrameworks ()) {
+			foreach (TargetFramework fx in Runtime.SystemAssemblyService.GetKnownFrameworks ()) {
 				// A framework is installed if the assemblies directory exists and the first
 				// assembly of the list exists.
 				if (frameworks.Add (fx.Id) && IsInstalled (fx)) {
@@ -545,7 +542,7 @@ namespace MonoDevelop.Core.Assemblies
 					if (File.Exists (file)) {
 						if (assembly.Version == null && IsRunning) {
 							try {
-								System.Reflection.AssemblyName aname = SystemAssemblyService.GetAssemblyNameObj (file);
+								AssemblyName aname = SystemAssemblyService.GetAssemblyNameObj (file);
 								assembly.Update (aname);
 							} catch {
 								// If something goes wrong when getting the name, just ignore the assembly
@@ -579,26 +576,35 @@ namespace MonoDevelop.Core.Assemblies
 		{
 			return GetBackend (fx).GetFrameworkPackageInfo (packageName);
 		}
-		
+
 		protected static IEnumerable<TargetFramework> FindTargetFrameworks (FilePath frameworksDirectory)
+		{
+			return FindTargetFrameworks (frameworksDirectory, false);
+		}
+
+		protected static IEnumerable<TargetFramework> FindTargetFrameworks (FilePath frameworksDirectory, bool rescanKnownFrameworks)
 		{
 			foreach (FilePath idDir in Directory.GetDirectories (frameworksDirectory)) {
 				var id = idDir.FileName;
 				foreach (FilePath versionDir in Directory.GetDirectories (idDir)) {
 					var version = versionDir.FileName;
 					var moniker = new TargetFrameworkMoniker (id, version);
-					var fx = ReadTargetFramework (moniker, versionDir);
-					if (fx != null)
-						yield return (fx);
+					if (rescanKnownFrameworks || !Runtime.SystemAssemblyService.IsKnownFramework (moniker)) {
+						var fx = ReadTargetFramework (moniker, versionDir);
+						if (fx != null)
+							yield return (fx);
+					}
 					var profileListDir = versionDir.Combine ("Profile");
 					if (!Directory.Exists (profileListDir))
 						continue;
 					foreach (FilePath profileDir in Directory.GetDirectories (profileListDir)) {
 						var profile = profileDir.FileName;
 						moniker = new TargetFrameworkMoniker (id, version, profile);
-						fx = ReadTargetFramework (moniker, profileDir);
-						if (fx != null)
-							yield return (fx);
+						if (rescanKnownFrameworks || !Runtime.SystemAssemblyService.IsKnownFramework (moniker)) {
+							var fx = ReadTargetFramework (moniker, profileDir);
+							if (fx != null)
+								yield return (fx);
+						}
 					}
 				}
 			}

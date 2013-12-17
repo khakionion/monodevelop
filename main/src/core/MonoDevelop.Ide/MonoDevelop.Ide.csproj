@@ -21,9 +21,12 @@
       <Execution clr-version="Net_2_0" />
     </Execution>
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+    <DefineConstants>DEBUG</DefineConstants>
+    <GenerateDocumentation>true</GenerateDocumentation>
+    <NoWarn>1591;1573</NoWarn>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-    <DebugType>none</DebugType>
+    <DebugType>pdbonly</DebugType>
     <Optimize>True</Optimize>
     <OutputPath>..\..\..\build\AddIns\</OutputPath>
     <ErrorReport>prompt</ErrorReport>
@@ -32,6 +35,9 @@
       <Execution clr-version="Net_2_0" />
     </Execution>
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+    <DebugSymbols>true</DebugSymbols>
+    <GenerateDocumentation>true</GenerateDocumentation>
+    <NoWarn>1591;1573</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System" />
@@ -64,6 +70,7 @@
     <Reference Include="Mono.Cairo" />
     <Reference Include="System.Web" />
     <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Design" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\MonoDevelop.Core\MonoDevelop.Core.csproj">
@@ -117,6 +124,18 @@
     <ProjectReference Include="..\..\..\external\cecil\Mono.Cecil.csproj">
       <Project>{D68133BD-1E63-496E-9EDE-4FBDBF77B486}</Project>
       <Name>Mono.Cecil</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\external\debugger-libs\Mono.Debugging\Mono.Debugging.csproj">
+      <Project>{90C99ADB-7D4B-4EB4-98C2-40BD1B14C7D2}</Project>
+      <Name>Mono.Debugging</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\external\nrefactory\ICSharpCode.NRefactory.IKVM\ICSharpCode.NRefactory.IKVM.csproj">
+      <Project>{A727169F-D94F-443F-B305-B057D7F3B420}</Project>
+      <Name>ICSharpCode.NRefactory.IKVM</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\external\ikvm\reflect\IKVM.Reflection.csproj">
+      <Project>{4CB170EF-DFE6-4A56-9E1B-A85449E827A7}</Project>
+      <Name>IKVM.Reflection</Name>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
@@ -1078,6 +1097,27 @@
     <EmbeddedResource Include="icons\statusConnecting-06.png">
       <LogicalName>statusConnecting-06.png</LogicalName>
     </EmbeddedResource>
+    <EmbeddedResource Include="icons\variable-16.png">
+      <LogicalName>variable-16.png</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="icons\bubble-error-icon.png">
+      <LogicalName>bubble-error-icon.png</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="icons\bubble-warning-icon.png">
+      <LogicalName>bubble-warning-icon.png</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="icons\issuestatus-error-16.png">
+      <LogicalName>issuestatus-error-16.png</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="icons\issuestatus-ok-16.png">
+      <LogicalName>issuestatus-ok-16.png</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="icons\issuestatus-updating-16.png">
+      <LogicalName>issuestatus-updating-16.png</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="icons\issuestatus-warning-16.png">
+      <LogicalName>issuestatus-warning-16.png</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="MonoDevelop.Ide.Commands\CustomStringTagProvider.cs" />
@@ -1253,7 +1293,6 @@
     <Compile Include="MonoDevelop.Ide.Gui.Content\IUrlHandler.cs" />
     <Compile Include="MonoDevelop.Ide.Gui.Content\ISmartIndenter.cs" />
     <Compile Include="AssemblyInfo.cs" />
-    <Compile Include="BuildVariables.cs" />
     <Compile Include="MonoDevelop.Ide.Gui.Content\ITextEditorResolver.cs" />
     <Compile Include="MonoDevelop.Ide.Gui.OptionPanels\AuthorInformationPanel.cs" />
     <Compile Include="MonoDevelop.Ide.Gui.OptionPanels\GlobalAuthorInformationPanel.cs" />
@@ -1345,9 +1384,7 @@
     <Compile Include="MonoDevelop.Components\CellRendererComboBox.cs" />
     <Compile Include="MonoDevelop.Components\TreeViewCellContainer.cs" />
     <Compile Include="MonoDevelop.Components\TreeViewState.cs" />
-    <Compile Include="MonoDevelop.Components\NotebookButtonBar.cs">
-      <DeployService-Deploy>True</DeployService-Deploy>
-    </Compile>
+    <Compile Include="MonoDevelop.Components\NotebookButtonBar.cs" />
     <Compile Include="MonoDevelop.Components\MenuButton.cs" />
     <Compile Include="MonoDevelop.Components\FixedWidthWrapLabel.cs" />
     <Compile Include="MonoDevelop.Components\InvisibleFrame.cs" />
@@ -1816,7 +1853,6 @@
     <Compile Include="MonoDevelop.Ide.WelcomePage\WelcomePageListButton.cs" />
     <Compile Include="MonoDevelop.Ide.WelcomePage\WelcomePageButtonBar.cs" />
     <Compile Include="MonoDevelop.Ide.WelcomePage\WelcomePageBarButton.cs" />
-    <Compile Include="MonoDevelop.Components\Tweener.cs" />
     <Compile Include="MonoDevelop.Components\MouseTracker.cs" />
     <Compile Include="MonoDevelop.Components.MainToolbar\SearchPopupSearchPattern.cs" />
     <Compile Include="MonoDevelop.Components\PopoverWindowTheme.cs" />
@@ -1857,27 +1893,24 @@
     <Compile Include="MonoDevelop.Ide.Gui\StatusBarContextImpl.cs" />
     <Compile Include="MonoDevelop.Components.MainToolbar\MainStatusBarContextImpl.cs" />
     <Compile Include="MonoDevelop.Ide.TypeSystem\MonoDevelopProjectContent.cs" />
+    <Compile Include="MonoDevelop.Components.Commands\ICommandDelegator.cs" />
+    <Compile Include="MonoDevelop.Ide.CustomTools\ResXFileCodeGenerator.cs" />
+    <Compile Include="MonoDevelop.Ide.CustomTools\ThreadAsyncOperation.cs" />
+    <Compile Include="MonoDevelop.Ide.Projects\IdeFileSystemExtensionExtension.cs" />
+    <Compile Include="AddinInfo.cs" />
+    <Compile Include="MonoDevelop.Ide.CodeCompletion\CompletionCharacters.cs" />
+    <Compile Include="MonoDevelop.Ide.CodeCompletion\CompletionCharacterCodon.cs" />
+    <Compile Include="MonoDevelop.Ide.TypeSystem\IRefactoringContext.cs" />
+    <Compile Include="MonoDevelop.Ide.Gui.Pads.ProjectPad\ImplicitFrameworkAssemblyReferenceNodeBuilder.cs" />
+    <Compile Include="MonoDevelop.Ide.Gui.Pads.ProjectPad\PortableFrameworkSubsetNodeBuilder.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Makefile.am" />
-    <Data Include="options\DefaultEditingLayout.xml">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Data>
-    <Data Include="options\MonoDevelopProperties.xml">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Data>
-    <Data Include="options\MonoDevelop-templates.xml">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Data>
-    <Data Include="options\MonoDevelop-tools.xml">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Data>
-    <Data Include="options\StandardHeader.xml">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Data>
-    <Data Include="options\TipsOfTheDay.xml">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Data>
+    <Data Include="options\DefaultEditingLayout.xml" />
+    <Data Include="options\MonoDevelopProperties.xml" />
+    <Data Include="options\MonoDevelop-templates.xml" />
+    <Data Include="options\MonoDevelop-tools.xml" />
+    <Data Include="options\TipsOfTheDay.xml" />
     <None Include="MonoDevelop.Ide.dll.config">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
@@ -1916,10 +1949,13 @@
     <Folder Include="MonoDevelop.Ide.TextEditing\" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="gtkrc">
+    <Content Include="gtkrc.win32">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="gtkrc.win32">
+    <Content Include="gtkrc.mac">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="gtkrc">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>

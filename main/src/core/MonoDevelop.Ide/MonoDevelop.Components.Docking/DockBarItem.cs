@@ -34,12 +34,12 @@ using Gtk;
 using Mono.TextEditor;
 using MonoDevelop.Ide.Gui;
 using MonoDevelop.Components;
-
-using Animations = MonoDevelop.Components.AnimationExtensions;
+using Xwt.Motion;
+using Animations = Xwt.Motion.AnimationExtensions;
 
 namespace MonoDevelop.Components.Docking
 {	
-	class CrossfadeIcon: Gtk.Image, Animatable
+	class CrossfadeIcon: Gtk.Image, IAnimatable
 	{
 		// This class should be subclassed from Gtk.Misc, but there is no reasonable way to do that due to there being no bindings to gtk_widget_set_has_window
 
@@ -47,7 +47,7 @@ namespace MonoDevelop.Components.Docking
 		SurfaceWrapper secondarySurface;
 		Gdk.Pixbuf primary, secondary;
 
-		float secondaryOpacity;
+		double secondaryOpacity;
 
 		public CrossfadeIcon (Gdk.Pixbuf primary, Gdk.Pixbuf secondary)
 		{
@@ -60,13 +60,13 @@ namespace MonoDevelop.Components.Docking
 			this.secondary = secondary.Copy ();
 		}
 
-		protected override void OnDestroyed ()
+		protected override void OnUnrealized ()
 		{
 			if (primarySurface != null)
 				primarySurface.Dispose ();
 			if (secondarySurface != null)
 				secondarySurface.Dispose ();
-			base.OnDestroyed ();
+			base.OnUnrealized ();
 		}
 
 		protected override void OnRealized ()
@@ -85,6 +85,9 @@ namespace MonoDevelop.Components.Docking
 			secondary = null;
 		}
 
+		void IAnimatable.BatchBegin () { }
+		void IAnimatable.BatchCommit () { QueueDraw (); }
+
 		public void ShowPrimary ()
 		{
 			AnimateCrossfade (false);
@@ -97,10 +100,10 @@ namespace MonoDevelop.Components.Docking
 
 		void AnimateCrossfade (bool toSecondary)
 		{
-			this.Animate (name: "CrossfadeIconSwap",
-			              start: secondaryOpacity,
-			              end: toSecondary ? 1.0f : 0.0f,
-			              callback: x => secondaryOpacity = x);
+			this.Animate ("CrossfadeIconSwap",
+			              x => secondaryOpacity = x,
+			              secondaryOpacity,
+			              toSecondary ? 1.0f : 0.0f);
 		}
 
 		protected override void OnSizeRequested (ref Requisition requisition)
@@ -124,7 +127,7 @@ namespace MonoDevelop.Components.Docking
 			return false;
 		}
 
-		void RenderIcon (Cairo.Context context, SurfaceWrapper surface, float opacity)
+		void RenderIcon (Cairo.Context context, SurfaceWrapper surface, double opacity)
 		{
 			context.SetSourceSurface (surface.Surface, 
 			                          Allocation.X + (Allocation.Width - surface.Width) / 2,
@@ -134,7 +137,7 @@ namespace MonoDevelop.Components.Docking
 		}
 	}
 
-	class DockBarItem: EventBox, Animatable
+	class DockBarItem: EventBox, IAnimatable
 	{
 		DockBar bar;
 		DockItem it;
@@ -149,7 +152,7 @@ namespace MonoDevelop.Components.Docking
 		Gdk.Size lastFrameSize;
 		MouseTracker tracker;
 		CrossfadeIcon crossfade;
-		float hoverProgress;
+		double hoverProgress;
 
 		public DockBarItem (DockBar bar, DockItem it, int size)
 		{
@@ -177,13 +180,16 @@ namespace MonoDevelop.Components.Docking
 			};
 		}
 
+		void IAnimatable.BatchBegin () { }
+		void IAnimatable.BatchCommit () { QueueDraw (); }
+
 		void AnimateHover (bool hovered)
 		{
 			this.Animate ("Hover",
-			              length: 100,
-			              start: hoverProgress,
-			              end: hovered ? 1.0f : 0.0f,
-			              callback: x => hoverProgress = x);
+			              x => hoverProgress = x,
+			              hoverProgress,
+			              hovered ? 1.0f : 0.0f,
+			              length: 100);
 		}
 		
 		void HandleBarFrameSizeAllocated (object o, SizeAllocatedArgs args)
@@ -478,22 +484,22 @@ namespace MonoDevelop.Components.Docking
 					lg = new Cairo.LinearGradient (0, alloc.Y, 0, alloc.Y + alloc.Height);
 				}
 
-				Cairo.Color primaryColor = Styles.DockBarPrelightColor;
-				primaryColor.A = hoverProgress;
+				using (lg) {
+					Cairo.Color primaryColor = Styles.DockBarPrelightColor;
+					primaryColor.A = hoverProgress;
 
-				Cairo.Color transparent = primaryColor;
-				transparent.A = 0;
+					Cairo.Color transparent = primaryColor;
+					transparent.A = 0;
 
-				lg.AddColorStop (0.0, transparent);
-				lg.AddColorStop (0.35, primaryColor);
-				lg.AddColorStop (0.65, primaryColor);
-				lg.AddColorStop (1.0, transparent);
+					lg.AddColorStop (0.0, transparent);
+					lg.AddColorStop (0.35, primaryColor);
+					lg.AddColorStop (0.65, primaryColor);
+					lg.AddColorStop (1.0, transparent);
 
-				context.Rectangle (alloc.ToCairoRect ());
-				context.Pattern = lg;
+					context.Rectangle (alloc.ToCairoRect ());
+					context.SetSource (lg);
+				}
 				context.Fill ();
-
-				lg.Destroy ();
 			}
 			return base.OnExposeEvent (evnt);
 		}

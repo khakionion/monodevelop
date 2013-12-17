@@ -39,27 +39,46 @@ using System.Text;
 
 namespace MonoDevelop.CSharp
 {
-	public class PathedDocumentTextEditorExtension : TextEditorExtension, IPathedDocument
+	class PathedDocumentTextEditorExtension : TextEditorExtension, IPathedDocument
 	{
 		public override void Dispose ()
 		{
-			Document.Editor.Caret.PositionChanged -= UpdatePath;
+			if (caret != null) {
+				caret.PositionChanged -= UpdatePath;
+				caret = null;
+			}
+			if (ext != null) {
+				ext.TypeSegmentTreeUpdated -= HandleTypeSegmentTreeUpdated;
+				ext = null;
+			}
+			currentPath = null;
+			lastType = null;
+			lastMember = null;
 			base.Dispose ();
 		}
 
 		bool isPathSet;
-		
+		Mono.TextEditor.Caret caret;
+		CSharpCompletionTextEditorExtension ext;
+
 		public override void Initialize ()
 		{
 			CurrentPath = new PathEntry[] { new PathEntry (GettextCatalog.GetString ("No selection")) { Tag = null } };
 			isPathSet = false;
 			UpdatePath (null, null);
-			Document.Editor.Caret.PositionChanged += UpdatePath;
-			var ext = Document.GetContent<CSharpCompletionTextEditorExtension> ();
-			ext.TypeSegmentTreeUpdated += (o, s) => UpdatePath (null, null);
+			caret = Document.Editor.Caret;
+			caret.PositionChanged += UpdatePath;
+			ext = Document.GetContent<CSharpCompletionTextEditorExtension> ();
+			ext.TypeSegmentTreeUpdated += HandleTypeSegmentTreeUpdated;
+		}
+
+		void HandleTypeSegmentTreeUpdated (object sender, EventArgs e)
+		{
+			UpdatePath (null, null);
 		}
 
 		#region IPathedDocument implementation
+
 		public event EventHandler<DocumentPathChangedEventArgs> PathChanged;
 
 		protected virtual void OnPathChanged (DocumentPathChangedEventArgs e)
@@ -68,7 +87,7 @@ namespace MonoDevelop.CSharp
 			if (handler != null)
 				handler (this, e);
 		}
-		
+
 		class DataProvider : DropDownBoxListWindow.IListDataProvider
 		{
 			readonly PathedDocumentTextEditorExtension ext;
@@ -83,8 +102,27 @@ namespace MonoDevelop.CSharp
 				this.tag = tag;
 				Reset ();
 			}
-			
+
 			#region IListDataProvider implementation
+
+			void AddTypeToMemberList (TypeDeclaration type)
+			{
+				foreach (var member in type.Members) {
+					if (member is FieldDeclaration) {
+						foreach (var variable in ((FieldDeclaration)member).Variables)
+							memberList.Add (variable);
+					} else if (member is FixedFieldDeclaration) {
+						foreach (var variable in ((FixedFieldDeclaration)member).Variables)
+							memberList.Add (variable);
+					} else if (member is EventDeclaration) {
+						foreach (var variable in ((EventDeclaration)member).Variables)
+							memberList.Add (variable);
+					} else {
+						memberList.Add (member);
+					}
+				}
+			}
+
 			public void Reset ()
 			{
 				memberList.Clear ();
@@ -92,41 +130,25 @@ namespace MonoDevelop.CSharp
 					var unit = tag as SyntaxTree;
 					memberList.AddRange (unit.GetTypes (true));
 				} else if (tag is TypeDeclaration) {
-					var type = (TypeDeclaration)tag;
-					foreach (var member in type.Members) {
-						if (member is FieldDeclaration) {
-							foreach (var variable in ((FieldDeclaration)member).Variables)
-								memberList.Add (variable);
-						} else if (member is EventDeclaration) {
-							foreach (var variable in ((EventDeclaration)member).Variables)
-								memberList.Add (variable);
-						} else {
-							memberList.Add (member);
-						}
-					}
+					AddTypeToMemberList ((TypeDeclaration)tag);
 				} else if (tag is Accessor) {
 					var acc = (Accessor)tag;
 					var parent = (EntityDeclaration)acc.Parent;
 					memberList.AddRange (parent.Children.OfType<Accessor> ());
 				} else if (tag is EntityDeclaration) {
 					var entity = (EntityDeclaration)tag;
-					var type = (TypeDeclaration)entity.Parent;
-					foreach (var member in type.Members) {
-						if (member is FieldDeclaration) {
-							foreach (var variable in ((FieldDeclaration)member).Variables)
-								memberList.Add (variable);
-						} else {
-							memberList.Add (member);
-						}
+					var type = entity.Parent as TypeDeclaration;
+					if (type != null) {
+						AddTypeToMemberList (type);
 					}
 				} 
 
 				memberList.Sort ((x, y) => {
-					var result = String.Compare (GetName (x), GetName(y), StringComparison.OrdinalIgnoreCase);
+					var result = String.Compare (GetName (x), GetName (y), StringComparison.OrdinalIgnoreCase);
 					if (result == 0)
-						result = GetTypeParameters(x).CompareTo (GetTypeParameters(y));
+						result = GetTypeParameters (x).CompareTo (GetTypeParameters (y));
 					if (result == 0)
-						result = GetParameters(x).CompareTo (GetParameters(y));
+						result = GetParameters (x).CompareTo (GetParameters (y));
 
 					// partial methods without body should come last
 					if (result == 0 && x is MethodDeclaration && y is MethodDeclaration) {
@@ -171,14 +193,20 @@ namespace MonoDevelop.CSharp
 						return "get";
 					if (node.Role == PropertyDeclaration.SetterRole)
 						return "set";
-					if (node.Role == CustomEventDeclaration.AddAccessorRole) 
+					if (node.Role == CustomEventDeclaration.AddAccessorRole)
 						return "add";
 					if (node.Role == CustomEventDeclaration.RemoveAccessorRole)
 						return "remove";
-					return node.GetText ();
+					return node.ToString ();
 				}
+				if (node is OperatorDeclaration)
+					return "operator";
+
 				if (node is EntityDeclaration)
 					return ((EntityDeclaration)node).Name;
+				if (node is FixedVariableInitializer) {
+					return ((FixedVariableInitializer)node).Name;
+				}
 				return ((VariableInitializer)node).Name;
 			}
 
@@ -199,7 +227,7 @@ namespace MonoDevelop.CSharp
 				}
 				return ext.GetEntityMarkup (node);
 			}
-			
+
 			public Gdk.Pixbuf GetIcon (int n)
 			{
 				string icon;
@@ -211,12 +239,12 @@ namespace MonoDevelop.CSharp
 				}
 				return ImageService.GetPixbuf (icon, Gtk.IconSize.Menu);
 			}
-			
+
 			public object GetTag (int n)
 			{
-				return memberList[n];
+				return memberList [n];
 			}
-			
+
 			public void ActivateItem (int n)
 			{
 				var node = memberList [n];
@@ -236,53 +264,56 @@ namespace MonoDevelop.CSharp
 					extEditor.SetCaretTo (line, col);
 				}
 			}
-			
+
 			public int IconCount {
 				get {
 					return memberList.Count;
 				}
 			}
+
 			#endregion
+
 		}
-		
+
 		class CompilationUnitDataProvider : DropDownBoxListWindow.IListDataProvider
 		{
 			Document Document {
 				get;
 				set;
 			}
-			
+
 			public CompilationUnitDataProvider (Document document)
 			{
 				this.Document = document;
 			}
-			
+
 			#region IListDataProvider implementation
+
 			public void Reset ()
 			{
 			}
-			
+
 			public string GetMarkup (int n)
 			{
 				return GLib.Markup.EscapeText (Document.ParsedDocument.UserRegions.ElementAt (n).Name);
 			}
-			
+
 			internal static Gdk.Pixbuf Pixbuf {
 				get {
 					return ImageService.GetPixbuf (Gtk.Stock.Add, Gtk.IconSize.Menu);
 				}
 			}
-			
+
 			public Gdk.Pixbuf GetIcon (int n)
 			{
 				return Pixbuf;
 			}
-			
+
 			public object GetTag (int n)
 			{
 				return Document.ParsedDocument.UserRegions.ElementAt (n);
 			}
-			
+
 			public void ActivateItem (int n)
 			{
 				var reg = Document.ParsedDocument.UserRegions.ElementAt (n);
@@ -290,7 +321,7 @@ namespace MonoDevelop.CSharp
 				if (extEditor != null)
 					extEditor.SetCaretTo (Math.Max (1, reg.Region.BeginLine), reg.Region.BeginColumn);
 			}
-			
+
 			public int IconCount {
 				get {
 					if (Document.ParsedDocument == null)
@@ -298,9 +329,11 @@ namespace MonoDevelop.CSharp
 					return Document.ParsedDocument.UserRegions.Count ();
 				}
 			}
+
 			#endregion
+
 		}
-		
+
 		public Gtk.Widget CreatePathWidget (int index)
 		{
 			PathEntry[] path = CurrentPath;
@@ -308,11 +341,14 @@ namespace MonoDevelop.CSharp
 				return null;
 			var tag = path [index].Tag;
 			var window = new DropDownBoxListWindow (tag == null ? (DropDownBoxListWindow.IListDataProvider)new CompilationUnitDataProvider (Document) : new DataProvider (this, tag));
+			window.FixedRowHeight = 22;
+			window.MaxVisibleRows = 14;
 			window.SelectItem (path [index].Tag);
 			return window;
 		}
-		
+
 		PathEntry[] currentPath;
+
 		public PathEntry[] CurrentPath {
 			get {
 				return currentPath;
@@ -322,23 +358,23 @@ namespace MonoDevelop.CSharp
 				isPathSet = true;
 			}
 		}
-		
+
 		static PathEntry GetRegionEntry (ParsedDocument unit, Mono.TextEditor.DocumentLocation loc)
 		{
 			PathEntry entry;
 			if (!unit.UserRegions.Any ())
 				return null;
-			var reg = unit.UserRegions.Where (r => r.Region.IsInside (loc)).LastOrDefault ();
+			var reg = unit.UserRegions.LastOrDefault (r => r.Region.IsInside (loc));
 			if (reg == null) {
 				entry = new PathEntry (GettextCatalog.GetString ("No region"));
 			} else {
 				entry = new PathEntry (CompilationUnitDataProvider.Pixbuf,
-						                       GLib.Markup.EscapeText (reg.Name));
+				                       GLib.Markup.EscapeText (reg.Name));
 			}
 			entry.Position = EntryPosition.Right;
 			return entry;
 		}
-		
+
 		void ClearPath ()
 		{
 			var prev = CurrentPath;
@@ -351,6 +387,7 @@ namespace MonoDevelop.CSharp
 		EntityDeclaration lastMember;
 		string lastMemberMarkup;
 		AstAmbience amb;
+
 		string GetEntityMarkup (AstNode node)
 		{
 			if (amb == null)
@@ -370,8 +407,22 @@ namespace MonoDevelop.CSharp
 				return;
 
 			var loc = Document.Editor.Caret.Location;
+			var compExt = Document.GetContent<CSharpCompletionTextEditorExtension> ();
+			var caretOffset = Document.Editor.Caret.Offset;
+			var segType = compExt.GetTypeAt (caretOffset);
+			if (segType != null)
+				loc = segType.Region.Begin;
 
 			var curType = (EntityDeclaration)unit.GetNodeAt (loc, n => n is TypeDeclaration || n is DelegateDeclaration);
+
+
+			var segMember = compExt.GetMemberAt (caretOffset);
+			if (segMember != null) {
+				loc = segMember.Region.Begin;
+			} else {
+				loc = Document.Editor.Caret.Location;
+			}
+
 			var curMember = unit.GetNodeAt<EntityDeclaration> (loc);
 			if (curType == curMember)
 				curMember = null;
@@ -381,7 +432,7 @@ namespace MonoDevelop.CSharp
 			var curTypeMakeup = GetEntityMarkup (curType);
 			var curMemberMarkup = GetEntityMarkup (curMember);
 			if (isPathSet && curType != null && lastType != null && curType.StartLocation == lastType.StartLocation && curTypeMakeup == lastTypeMarkup &&
-			    curMember != null && lastMember != null && curMember.StartLocation == lastMember.StartLocation && curMemberMarkup == lastMemberMarkup)
+				curMember != null && lastMember != null && curMember.StartLocation == lastMember.StartLocation && curMemberMarkup == lastMemberMarkup)
 				return;
 
 			lastType = curType;
@@ -431,7 +482,7 @@ namespace MonoDevelop.CSharp
 				noSelection = new PathEntry (GettextCatalog.GetString ("No selection")) { Tag = curType };
 			}
 
-			if (noSelection != null) 
+			if (noSelection != null)
 				result.Add (noSelection);
 
 			var prev = CurrentPath;
@@ -452,8 +503,8 @@ namespace MonoDevelop.CSharp
 			//		});
 			//	});
 		}
+
 		#endregion
+
 	}
-
-
 }

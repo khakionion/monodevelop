@@ -27,13 +27,15 @@
 using System;
 using Mono.TextEditor.Highlighting;
 using Mono.MHex.Rendering;
-using Gdk;
+using Xwt;
 using MonoDevelop.Core;
 using MonoDevelop.Ide;
+using Mono.TextEditor;
+using Xwt.Drawing;
 
 namespace MonoDevelop.HexEditor
 {
-	public class MonoDevelopHexEditorStyle : HexEditorStyle
+	class MonoDevelopHexEditorStyle : HexEditorStyle
 	{
 		ColorScheme colorStyle;
 		Mono.MHex.HexEditor hexEditor;
@@ -54,88 +56,93 @@ namespace MonoDevelop.HexEditor
 		{
 			colorStyle = SyntaxModeService.GetColorStyle (IdeApp.Preferences.ColorScheme);
 		}
-		
+
+		Color ConvertColor (Cairo.Color foreground)
+		{
+			return new Color (foreground.R, foreground.G, foreground.B, foreground.A);
+		}
+
 		public override Color HexOffset {
 			get {
-				return colorStyle.LineNumber.Color;
+				return ConvertColor (colorStyle.LineNumbers.Foreground);
 			}
 		}
 		
 		public override Color HexOffsetBg {
 			get {
-				return colorStyle.LineNumber.BackgroundColor;
+				return ConvertColor (colorStyle.LineNumbers.Background);
 			}
 		}
 		
-		public override Color HexOffsetHighlighted {
+/*		public override Color HexOffsetHighlighted {
 			get {
-				return Mono.TextEditor.Highlighting.ColorScheme.ToGdkColor (colorStyle.LineMarker);
+				return ConvertColor (colorStyle.LineNumbers.fo);
 			}
-		}
+		}*/
 		
 		public override Color HexDigit {
 			get {
-				return colorStyle.Default.Color;
+				return ConvertColor (colorStyle.PlainText.Foreground);
 			}
 		}
 		
 		public override Color HexDigitBg {
 			get {
-				return colorStyle.Default.BackgroundColor;
+				return ConvertColor (colorStyle.PlainText.Background);
 			}
 		}
 		
 		public override Color DashedLineFg {
 			get {
-				return colorStyle.Default.Color;
+				return ConvertColor (colorStyle.PlainText.Foreground);
 			}
 		}
 		
 		public override Color DashedLineBg {
 			get {
-				return colorStyle.Default.BackgroundColor;
+				return ConvertColor (colorStyle.PlainText.Background);
 			}
 		}
 		
 		public override Color IconBarBg {
 			get {
-				return Mono.TextEditor.Highlighting.ColorScheme.ToGdkColor (colorStyle.IconBarBg);
+				return ConvertColor (colorStyle.IndicatorMarginSeparator.Color);
 			}
 		}
 		
 		public override Color IconBarSeperator {
 			get {
-				return Mono.TextEditor.Highlighting.ColorScheme.ToGdkColor (colorStyle.IconBarSeperator);
+				return ConvertColor (colorStyle.IndicatorMarginSeparator.Color);
 			}
 		}
 		
 		public override Color BookmarkColor1 {
 			get {
-				return Mono.TextEditor.Highlighting.ColorScheme.ToGdkColor (colorStyle.BookmarkColor1);
+				return ConvertColor (colorStyle.Bookmarks.Color);
 			}
 		}
 		
 		public override Color BookmarkColor2 {
 			get {
-				return Mono.TextEditor.Highlighting.ColorScheme.ToGdkColor (colorStyle.BookmarkColor2);
+				return ConvertColor (colorStyle.Bookmarks.SecondColor);
 			}
 		}
 		
 		public override Color Selection {
 			get {
-				return colorStyle.Selection.Color;
+				return ConvertColor (colorStyle.SelectedText.Foreground);
 			}
 		}
 		
 		public override Color SelectionBg {
 			get {
-				return colorStyle.Selection.BackgroundColor;
+				return ConvertColor (colorStyle.SelectedText.Background);
 			}
 		}
 		
 		public override Color HighlightOffset {
 			get {
-				return Mono.TextEditor.Highlighting.ColorScheme.ToGdkColor (colorStyle.SearchTextBg);
+				return ConvertColor (colorStyle.SearchResult.Color);
 			}
 		}
 	}

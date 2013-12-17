@@ -46,6 +46,8 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 		MSBuildFileFormat targetFormat;
 		DataItem customSlnData;
 		
+		internal List<string> UnresolvedProjectDependencies { get; set; }
+
 		internal protected MSBuildHandler ()
 		{
 		}
@@ -133,6 +135,10 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 			throw new NotSupportedException ();
 		}
 		
+		public virtual void OnModified (string hint)
+		{
+		}
+
 		public virtual void Dispose ()
 		{
 		}

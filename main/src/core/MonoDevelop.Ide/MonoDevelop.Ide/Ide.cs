@@ -57,7 +57,6 @@ namespace MonoDevelop.Ide
 		static IdeServices ideServices;
 		static RootWorkspace workspace;
 		static IdePreferences preferences;
-		static Version version;
 
 		public const int CurrentRevision = 5;
 		
@@ -158,16 +157,7 @@ namespace MonoDevelop.Ide
 		
 		public static Version Version {
 			get {
-				if (version == null) {
-					version = new Version (BuildVariables.PackageVersion);
-					var relId = SystemInformation.GetReleaseId ();
-					if (relId != null && relId.Length >= 9) {
-						int rev;
-						int.TryParse (relId.Substring (relId.Length - 4), out rev);
-						version = new Version (Math.Max (version.Major, 0), Math.Max (version.Minor, 0), Math.Max (version.Build, 0), Math.Max (rev, 0));
-					}
-				}
-				return version;
+				return IdeVersionInfo.GetVersion ();
 			}
 		}
 		
@@ -193,6 +183,7 @@ namespace MonoDevelop.Ide
 			KeyBindingService.LoadCurrentBindings ("MD2");
 
 			commandService.CommandError += delegate (object sender, CommandErrorArgs args) {
+				LoggingService.LogError (args.ErrorMessage, args.Exception);
 				MessageService.ShowException (args.Exception, args.ErrorMessage);
 			};
 			
@@ -253,8 +244,8 @@ namespace MonoDevelop.Ide
 			if (PropertyService.Get("MonoDevelop.Core.FirstRun", false)) {
 				isInitialRun = true;
 				PropertyService.Set ("MonoDevelop.Core.FirstRun", false);
-				PropertyService.Set ("MonoDevelop.Core.LastRunVersion", BuildVariables.PackageVersion);
-				PropertyService.Set ("MonoDevelop.Core.LastRunVersion", CurrentRevision);
+				PropertyService.Set ("MonoDevelop.Core.LastRunVersion", BuildInfo.Version);
+				PropertyService.Set ("MonoDevelop.Core.LastRunRevision", CurrentRevision);
 				PropertyService.SaveProperties ();
 			}
 
@@ -271,7 +262,7 @@ namespace MonoDevelop.Ide
 					}
 				}
 				upgradedFromRevision = lastRevision;
-				PropertyService.Set ("MonoDevelop.Core.LastRunVersion", BuildVariables.PackageVersion);
+				PropertyService.Set ("MonoDevelop.Core.LastRunVersion", BuildInfo.Version);
 				PropertyService.Set ("MonoDevelop.Core.LastRunRevision", CurrentRevision);
 				PropertyService.SaveProperties ();
 			}
@@ -337,7 +328,7 @@ namespace MonoDevelop.Ide
 		//this method is MIT/X11, 2009, Michael Hutchinson / (c) Novell
 		public static void OpenFiles (IEnumerable<FileOpenInformation> files)
 		{
-			if (files.Count() == 0)
+			if (!files.Any ())
 				return;
 			if (!IsInitialized) {
 				EventHandler onInit = null;

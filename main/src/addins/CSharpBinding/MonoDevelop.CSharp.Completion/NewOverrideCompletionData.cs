@@ -38,7 +38,7 @@ using MonoDevelop.Ide.TypeSystem;
 
 namespace MonoDevelop.CSharp.Completion
 {
-	public class NewOverrideCompletionData : CompletionData
+	class NewOverrideCompletionData : CompletionData
 	{
 		CSharpCompletionTextEditorExtension ext;
 		IMember member;
@@ -63,7 +63,7 @@ namespace MonoDevelop.CSharp.Completion
 			this.GenerateBody = true;
 			this.Icon = member.GetStockIcon ();
 			this.DisplayText = ambience.GetString (member, OutputFlags.IncludeParameters | OutputFlags.IncludeParameterName | OutputFlags.IncludeGenerics | OutputFlags.HideExtensionsParameter| OutputFlags.IncludeAccessor);
-			this.CompletionText = member.EntityType == EntityType.Indexer ? "this" : member.Name;
+			this.CompletionText = member.SymbolKind == SymbolKind.Indexer ? "this" : member.Name;
 		}
 		
 		public override void InsertCompletionText (CompletionListWindow window, ref KeyActions ka, Gdk.Key closeChar, char keyChar, Gdk.ModifierType modifier)
@@ -79,7 +79,7 @@ namespace MonoDevelop.CSharp.Completion
 					}
 				}
 			}
-			var resolvedType = type.Resolve (ext.ParsedDocument.GetTypeResolveContext (ext.Compilation, editor.Caret.Location)).GetDefinition ();
+			var resolvedType = type.Resolve (ext.Project).GetDefinition ();
 			if (ext.Project != null)
 				generator.PolicyParent = ext.Project.Policies;
 			var result = generator.CreateMemberImplementation (resolvedType, type, member, isExplicit);

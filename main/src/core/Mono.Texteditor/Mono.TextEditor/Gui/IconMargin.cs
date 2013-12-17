@@ -57,8 +57,8 @@ namespace Mono.TextEditor
 		
 		internal protected override void OptionsChanged ()
 		{
-			backgroundColor = editor.ColorStyle.IconBarBg;
-			separatorColor = editor.ColorStyle.IconBarSeperator;
+			backgroundColor = editor.ColorStyle.IndicatorMargin.Color;
+			separatorColor = editor.ColorStyle.IndicatorMarginSeparator.Color;
 			
 			layout.FontDescription = editor.Options.Font;
 			layout.SetText ("!");
@@ -75,8 +75,14 @@ namespace Mono.TextEditor
 			DocumentLine lineSegment = args.LineSegment;
 			if (lineSegment != null) {
 				foreach (TextLineMarker marker in lineSegment.Markers) {
+					var marginMarker = marker as MarginMarker;
+					if (marginMarker != null) 
+						marginMarker.InformMousePress (editor, this, args);
+
+#pragma warning disable 618
 					if (marker is IIconBarMarker) 
 						((IIconBarMarker)marker).MousePress (args);
+#pragma warning restore 618
 				}
 			}
 		}
@@ -88,8 +94,14 @@ namespace Mono.TextEditor
 			DocumentLine lineSegment = args.LineSegment;
 			if (lineSegment != null) {
 				foreach (TextLineMarker marker in lineSegment.Markers) {
+					var marginMarker = marker as MarginMarker;
+					if (marginMarker != null) 
+						marginMarker.InformMouseRelease (editor, this, args);
+
+#pragma warning disable 618
 					if (marker is IIconBarMarker) 
 						((IIconBarMarker)marker).MouseRelease (args);
+#pragma warning restore 618
 				}
 			}
 		}
@@ -101,27 +113,61 @@ namespace Mono.TextEditor
 			DocumentLine lineSegment = args.LineSegment;
 			if (lineSegment != null) {
 				foreach (TextLineMarker marker in lineSegment.Markers) {
+					var marginMarker = marker as MarginMarker;
+					if (marginMarker != null) 
+						marginMarker.InformMouseHover (editor, this, args);
+
+#pragma warning disable 618
 					if (marker is IIconBarMarker) 
 						((IIconBarMarker)marker).MouseHover (args);
+#pragma warning restore 618
 				}
 			}
 		}
 
 		internal protected override void Draw (Cairo.Context ctx, Cairo.Rectangle area, DocumentLine lineSegment, int line, double x, double y, double lineHeight)
 		{
-			ctx.Rectangle (x, y, Width, lineHeight);
-			ctx.Color = backgroundColor;
-			ctx.Fill ();
-			
-			ctx.MoveTo (x + Width - 0.5, y);
-			ctx.LineTo (x + Width - 0.5, y + lineHeight);
-			ctx.Color = separatorColor;
-			ctx.Stroke ();
-			
+			bool backgroundIsDrawn = false;
+			if (lineSegment != null) {
+				foreach (var marker in lineSegment.Markers) {
+					var marginMarker = marker as MarginMarker;
+					if (marginMarker != null && marginMarker.CanDrawBackground (this)) {
+						backgroundIsDrawn = marginMarker.DrawBackground (editor, ctx, new MarginDrawMetrics (this, area, lineSegment, line, x, y, lineHeight));
+					}
+
+#pragma warning disable 618
+					var iconMarker = marker as IIconBarMarker;
+					if (iconMarker == null || !iconMarker.CanDrawBackground)
+						continue;
+					iconMarker.DrawBackground (editor, ctx, lineSegment, line, x, y, (int)Width, editor.LineHeight);
+					backgroundIsDrawn = true;
+					break;
+#pragma warning restore 618
+				}
+			}
+
+			if (!backgroundIsDrawn) {
+				ctx.Rectangle (x, y, Width, lineHeight);
+				ctx.SetSourceColor (backgroundColor);
+				ctx.Fill ();
+				
+				ctx.MoveTo (x + Width - 0.5, y);
+				ctx.LineTo (x + Width - 0.5, y + lineHeight);
+				ctx.SetSourceColor (separatorColor);
+				ctx.Stroke ();
+			}
+
 			if (lineSegment != null && line <= editor.Document.LineCount) {
-				foreach (TextLineMarker marker in lineSegment.Markers) {
+				foreach (var marker in lineSegment.Markers) {
+					var marginMarker = marker as MarginMarker;
+					if (marginMarker != null && marginMarker.CanDrawForeground (this)) {
+						marginMarker.DrawForeground (editor, ctx, new MarginDrawMetrics (this, area, lineSegment, line, x, y, lineHeight));
+					}
+
+#pragma warning disable 618
 					if (marker is IIconBarMarker) 
 						((IIconBarMarker)marker).DrawIcon (editor, ctx, lineSegment, line, x, y, (int)Width, editor.LineHeight);
+#pragma warning restore 618
 				}
 				if (DrawEvent != null) 
 					DrawEvent (this, new BookmarkMarginDrawEventArgs (editor, ctx, lineSegment, line, x, y));

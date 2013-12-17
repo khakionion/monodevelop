@@ -19,14 +19,19 @@
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
     <ConsolePause>False</ConsolePause>
+    <GenerateDocumentation>true</GenerateDocumentation>
+    <NoWarn>1591;1573</NoWarn>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-    <DebugType>none</DebugType>
-    <Optimize>False</Optimize>
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
     <OutputPath>..\..\..\..\build\AddIns\MonoDevelop.TextTemplating</OutputPath>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
     <ConsolePause>False</ConsolePause>
+    <DebugSymbols>true</DebugSymbols>
+    <GenerateDocumentation>true</GenerateDocumentation>
+    <NoWarn>1591;1573</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <EmbeddedResource Include="MonoDevelop.TextTemplating.addin.xml">
@@ -45,7 +50,7 @@
     <Compile Include="TextTemplatingFilePreprocessor.cs" />
     <Compile Include="TextTemplatingFileGenerator.cs" />
     <Compile Include="MonoDevelopTemplatingHost.cs" />
-    <Compile Include="ThreadAsyncOperation.cs" />
+    <Compile Include="ProjectFileTemplatingHost.cs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="System" />

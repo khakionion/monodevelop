@@ -10,11 +10,12 @@
 		<Icon>md-project-gui|res:csharp-icon-32.png</Icon>
 		<LanguageName>C#</LanguageName>
 		<_Description>Creates a Gtk# 2.0 project.</_Description>
+		<DefaultFilename>GtkSharpProject</DefaultFilename>
 	</TemplateConfiguration>
 	
 	<!-- Actions -->
 	<Actions>
-		<Open filename = "Main.cs"/>
+		<Open filename = "Program.cs"/>
 	</Actions>
 	
 	<!-- Template Content -->
@@ -76,7 +77,7 @@ public partial class MainWindow: Gtk.Window
 				
 				<!-- The main class -->
 				
-				<File name="Main.cs" AddStandardHeader="True">
+				<File name="Program.cs" AddStandardHeader="True">
 <![CDATA[using System;
 using Gtk;
 

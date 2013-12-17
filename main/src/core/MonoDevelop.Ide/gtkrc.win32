@@ -1,5 +1,8 @@
-# Windows Theme for Xamarian
-# Copyright 2012 Christian Kellner <christian.kellner@lanedo.com>
+# Windows Theme for Xamarin composed by Lanedo GmbH
+# Copyright 2012 Xamarin Inc.
+# Authors: 
+#   Christian Kellner <christian.kellner@lanedo.com>
+#   Carlos Garnacho <carlos.garnacho@lanedo.com>
 
 gtk-color-scheme =
 "bg_color:         #f5f5f5
@@ -19,7 +22,8 @@ gtk-icon-sizes        = "gtk-small-toolbar=16,16:gtk-large-toolbar=22,22"
 gtk-toolbar-icon-size = large-toolbar
 gtk-auto-mnemonics    = 1
 gtk-alternative-button-order = 1
-
+gtk-error-bell = 0
+gtk-show-input-method-menu = 0
 
 style "default" {
     xthickness = 1
@@ -206,8 +210,6 @@ style "toolbar-combo-box" = "default"
 style "combo-box" = "default"
 {
     fg[NORMAL] = "#616161"
-    xthickness = 4
-    ythickness = 4
 
     engine "wimp" {
         arrowstyle = 3
@@ -327,6 +329,7 @@ widget_class "*.GtkList.GtkButton"  style "tree-header"
 
 widget_class "*<GtkIconView>" style "icon-view"
 
+class "GtkComboBox" style "combo-box"
 widget_class "*.<GtkComboBox>.*" style "combo-box"
 widget_class "*.<GtkComboBoxText>.*" style "combo-box"
 widget_class "*.<GtkComboBoxEntry>.*" style "combo-box"

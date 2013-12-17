@@ -27,6 +27,7 @@ using System;
 using NUnit.Framework;
 
 using MonoDevelop.CSharp.Parser;
+using MonoDevelop.CSharp.Refactoring;
 using Mono.TextEditor;
 using System.Text;
 using System.Collections.Generic;
@@ -38,6 +39,7 @@ using MonoDevelop.Ide.Gui.Content;
 using MonoDevelop.CSharp.Formatting;
 using UnitTests;
 using MonoDevelop.Projects.Policies;
+using ICSharpCode.NRefactory.CSharp;
 
 namespace MonoDevelop.CSharpBinding
 {
@@ -46,32 +48,110 @@ namespace MonoDevelop.CSharpBinding
 	public class CSharpTextEditorIndentationTests : TestBase
 	{
 		const string eolMarker = "\n";
-		TextEditorData Create (string input)
+
+		public static TextEditorData Create (string content, ITextEditorOptions options = null)
 		{
 			var data = new TextEditorData ();
 			data.Options.DefaultEolMarker = eolMarker;
 			data.Options.IndentStyle = IndentStyle.Smart;
-			int idx = input.IndexOf ('$');
-			if (idx > 0)
-				input = input.Substring (0, idx) + input.Substring (idx + 1);
-			data.Text = input;
-			if (idx > 0)
-				data.Caret.Offset = idx;
+			if (options != null)
+				data.Options = options;
+			var sb = new StringBuilder ();
+			int caretIndex = -1, selectionStart = -1, selectionEnd = -1;
+			var foldSegments = new List<FoldSegment> ();
+			var foldStack = new Stack<FoldSegment> ();
+
+			for (int i = 0; i < content.Length; i++) {
+				var ch = content [i];
+				switch (ch) {
+					case '$':
+					caretIndex = sb.Length;
+					break;
+					case '<':
+					if (i + 1 < content.Length) {
+						if (content [i + 1] == '-') {
+							selectionStart = sb.Length;
+							i++;
+							break;
+						}
+					}
+					goto default;
+					case '-':
+					if (i + 1 < content.Length) {
+						var next = content [i + 1];
+						if (next == '>') {
+							selectionEnd = sb.Length;
+							i++;
+							break;
+						}
+						if (next == '[') {
+							var segment = new FoldSegment (data.Document, "...", sb.Length, 0, FoldingType.None);
+							segment.IsFolded = false;
+							foldStack.Push (segment);
+							i++;
+							break;
+						}
+					}
+					goto default;
+					case '+':
+					if (i + 1 < content.Length) {
+						var next = content [i + 1];
+						if (next == '[') {
+							var segment = new FoldSegment (data.Document, "...", sb.Length, 0, FoldingType.None);
+							segment.IsFolded = true;
+							foldStack.Push (segment);
+							i++;
+							break;
+						}
+					}
+					goto default;
+					case ']':
+					if (foldStack.Count > 0) {
+						FoldSegment segment = foldStack.Pop ();
+						segment.Length = sb.Length - segment.Offset;
+						foldSegments.Add (segment);
+						break;
+					}
+					goto default;
+					default:
+					sb.Append (ch);
+					break;
+				}
+			}
+			
+			data.Text = sb.ToString ();
+
+			if (caretIndex >= 0)
+				data.Caret.Offset = caretIndex;
+			if (selectionStart >= 0) {
+				if (caretIndex == selectionStart) {
+					data.SetSelection (selectionEnd, selectionStart);
+				} else {
+					data.SetSelection (selectionStart, selectionEnd);
+					if (caretIndex < 0)
+						data.Caret.Offset = selectionEnd;
+				}
+			}
+			if (foldSegments.Count > 0)
+				data.Document.UpdateFoldSegments (foldSegments);
 			return data;
 		}
 
-		DocumentStateTracker<CSharpIndentEngine> CreateTracker (TextEditorData data)
+		IStateMachineIndentEngine CreateTracker (TextEditorData data)
 		{
-			var policy = PolicyService.InvariantPolicies.Get <CSharpFormattingPolicy> ("text/x-csharp");
-			var textStylePolicy = PolicyService.InvariantPolicies.Get <TextStylePolicy> ("text/x-csharp");
-			var result = new DocumentStateTracker<CSharpIndentEngine> (new CSharpIndentEngine (policy, textStylePolicy), data);
-			result.UpdateEngine ();
+			var policy = PolicyService.InvariantPolicies.Get <CSharpFormattingPolicy> ("text/x-csharp").CreateOptions();
+			var textStylePolicy = data.CreateNRefactoryTextEditorOptions();
+			textStylePolicy.IndentBlankLines = true;
+			var result = new CacheIndentEngine(new ICSharpCode.NRefactory.CSharp.CSharpIndentEngine(data.Document, textStylePolicy, policy));
+			result.Update (data.Caret.Offset);
 			return result;
 		}
 
-		void CheckOutput (TextEditorData data, string output)
+		void CheckOutput (TextEditorData data, string output, CSharpTextEditorIndentation engine = null)
 		{
-			CSharpTextEditorIndentation.FixLineStart (data, CreateTracker (data), data.Caret.Line);
+			if (engine == null)
+				engine = new CSharpTextEditorIndentation ();
+			engine.FixLineStart (data, CreateTracker (data), data.Caret.Line);
 			int idx = output.IndexOf ('$');
 			if (idx > 0)
 				output = output.Substring (0, idx) + output.Substring (idx + 1);
@@ -158,7 +238,10 @@ namespace MonoDevelop.CSharpBinding
 			var data = Create ("\t\t\"Hello$ World\"");
 			MiscActions.InsertNewLine (data);
 
-			CheckOutput (data, "\t\t\"Hello\" +" + eolMarker + "\t\t\"$World\"");
+			var engine = new CSharpTextEditorIndentation () {
+				wasInStringLiteral = true
+			};
+			CheckOutput (data, "\t\t\"Hello\" +" + eolMarker + "\t\t\"$World\"", engine);
 		}
 
 		/// <summary>
@@ -252,6 +335,41 @@ namespace MonoDevelop.CSharpBinding
 		{
 			TestGuessSemicolonInsertionOffset ("this.method($)~");
 		}
+
+		/// <summary>
+		/// Bug 11966 - Code Completion Errors with /// Comments
+		/// </summary>
+		[Test]
+		public void TestBug11966 ()
+		{
+			var data = Create ("///<summary>This is a long comment $ </summary>");
+			MiscActions.InsertNewLine (data);
+
+			CheckOutput (data, @"///<summary>This is a long comment 
+/// $ </summary>");
+		}
+
+
+		[Test]
+		public void TestEnterSelectionBehavior ()
+		{
+			var data = Create ("\tfirst\n<-\tsecond\n->$\tthird");
+			MiscActions.InsertNewLine (data);
+
+			CheckOutput (data, "\tfirst\n\t$third");
+		}
+
+
+		/// <summary>
+		/// Bug 15335 - In a multiline comment, pressing Enter jumps way ahead
+		/// </summary>
+		[Test]
+		public void TestBug15335 ()
+		{
+			var data = Create ("namespace Foo\n{\n\tpublic class Bar\n\t{\n\t\tvoid Test()\r\n\t\t{\r\n\t\t\t/* foo$\n\t\t}\n\t}\n}\n");
+			MiscActions.InsertNewLine (data);
+
+			CheckOutput (data, "namespace Foo\n{\n\tpublic class Bar\n\t{\n\t\tvoid Test()\r\n\t\t{\r\n\t\t\t/* foo\n\t\t\t * $\n\t\t}\n\t}\n}\n");
+		}
 	}
 }
-

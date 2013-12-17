@@ -73,15 +73,17 @@ namespace MonoDevelop.MacIntegration
 				
 				if (!directoryMode) {
 					var filterPopup = MacSelectFileDialogHandler.CreateFileFilterPopup (data, panel);
-					
-					var filterLabel = new MDAlignment (new MDLabel (GettextCatalog.GetString ("Show files:")), true);
-					var filterBox = new MDBox (LayoutDirection.Horizontal, 2, 0) {
-						{ filterLabel },
-						{ new MDAlignment (filterPopup, true) { MinWidth = 200 } }
-					};
-					labels.Add (filterLabel);
-					box.Add (filterBox);
-					
+
+					if (filterPopup != null) {
+						var filterLabel = new MDAlignment (new MDLabel (GettextCatalog.GetString ("Show files:")), true);
+						var filterBox = new MDBox (LayoutDirection.Horizontal, 2, 0) {
+							{ filterLabel },
+							{ new MDAlignment (filterPopup, true) { MinWidth = 200 } }
+						};
+						labels.Add (filterLabel);
+						box.Add (filterBox);
+					}
+
 					if (data.ShowEncodingSelector) {
 						encodingSelector = new SelectEncodingPopUpButton (data.Action != Gtk.FileChooserAction.Save);
 						encodingSelector.SelectedEncodingId = data.Encoding != null ? data.Encoding.CodePage : 0;
@@ -172,18 +174,12 @@ namespace MonoDevelop.MacIntegration
 					if (encodingSelector != null)
 						encodingSelector.Enabled = !slnViewerSelected;
 				};
-				
-				try {
-					var action = MacSelectFileDialogHandler.RunPanel (data, panel);
-					if (!action) {
-						GtkQuartz.FocusWindow (data.TransientFor ?? MessageService.RootWindow);
-						return false;
-					}
-				} catch (Exception ex) {
-					System.Console.WriteLine (ex);
-					throw;
+
+				if (panel.RunModal () == 0) {
+					GtkQuartz.FocusWindow (data.TransientFor ?? MessageService.RootWindow);
+					return false;
 				}
-				
+
 				data.SelectedFiles = MacSelectFileDialogHandler.GetSelectedFiles (panel);
 				
 				if (encodingSelector != null)
@@ -197,6 +193,7 @@ namespace MonoDevelop.MacIntegration
 				
 				GtkQuartz.FocusWindow (data.TransientFor ?? MessageService.RootWindow);
 			} catch (Exception ex) {
+				LoggingService.LogError ("Error in Open File dialog", ex);
 				MessageService.ShowException (ex);
 			} finally {
 				if (panel != null)

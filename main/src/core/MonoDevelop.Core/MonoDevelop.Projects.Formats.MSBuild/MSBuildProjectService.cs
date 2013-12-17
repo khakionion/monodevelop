@@ -26,6 +26,7 @@
 //
 
 using System;
+using System.Linq;
 using System.Diagnostics;
 using System.Collections.Generic;
 using System.IO;
@@ -45,19 +46,20 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 	public static class MSBuildProjectService
 	{
 		const string ItemTypesExtensionPath = "/MonoDevelop/ProjectModel/MSBuildItemTypes";
-		public const string GenericItemGuid = "{9344bdbb-3e7f-41fc-a0dd-8665d75ee146}";
+		public const string GenericItemGuid = "{9344BDBB-3E7F-41FC-A0DD-8665D75EE146}";
 		public const string FolderTypeGuid = "{2150E333-8FDC-42A3-9474-1A3956D46DE8}";
 		
 		//NOTE: default toolsversion should match the default format.
 		// remember to update the builder process' app.config too
 		public const string DefaultFormat = "MSBuild10";
-		const string REFERENCED_MSBUILD_TOOLS = "4.0";
-		internal const string DefaultToolsVersion = REFERENCED_MSBUILD_TOOLS;
+		internal const string DefaultToolsVersion = "4.0";
 		
 		static DataContext dataContext;
 		
 		static Dictionary<string,RemoteBuildEngine> builders = new Dictionary<string, RemoteBuildEngine> ();
 		static GenericItemTypeNode genericItemTypeNode = new GenericItemTypeNode ();
+
+		internal static bool ShutDown { get; private set; }
 		
 		public static DataContext DataContext {
 			get {
@@ -81,7 +83,24 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 			Services.ProjectService.DataContextChanged += delegate {
 				dataContext = null;
 			};
+
+			PropertyService.PropertyChanged += HandlePropertyChanged;
+			DefaultMSBuildVerbosity = PropertyService.Get ("MonoDevelop.Ide.MSBuildVerbosity", MSBuildVerbosity.Normal);
+
+			Runtime.ShuttingDown += delegate {
+				ShutDown = true;
+				CleanProjectBuilders ();
+			};
 		}
+
+		static void HandlePropertyChanged (object sender, PropertyChangedEventArgs e)
+		{
+			if (e.Key == "MonoDevelop.Ide.MSBuildVerbosity") {
+				DefaultMSBuildVerbosity = (MSBuildVerbosity) e.NewValue;
+			}
+		}
+
+		internal static MSBuildVerbosity DefaultMSBuildVerbosity { get; private set; }
 		
 		public static SolutionEntityItem LoadItem (IProgressMonitor monitor, string fileName, MSBuildFileFormat expectedFormat, string typeGuid, string itemGuid)
 		{
@@ -167,27 +186,42 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 			return false;
 		}
 
+		public static void CheckHandlerUsesMSBuildEngine (SolutionItem item, out bool useByDefault, out bool require)
+		{
+			var handler = item.ItemHandler as MSBuildProjectHandler;
+			if (handler == null) {
+				useByDefault = require = false;
+				return;
+			}
+			useByDefault = handler.UseMSBuildEngineByDefault;
+			require = handler.RequireMSBuildEngine;
+		}
+
 		internal static DotNetProjectSubtypeNode GetDotNetProjectSubtype (string typeGuids)
 		{
-			if (!string.IsNullOrEmpty (typeGuids)) {
-				Type ptype = null;
-				DotNetProjectSubtypeNode foundNode = null;
-				foreach (string guid in typeGuids.Split (';')) {
-					string tguid = guid.Trim ();
-					foreach (DotNetProjectSubtypeNode st in GetItemSubtypeNodes ()) {
-						if (st.SupportsType (tguid)) {
-							if (ptype == null || ptype.IsAssignableFrom (st.Type)) {
-								ptype = st.Type;
-								foundNode = st;
-							}
+			if (!string.IsNullOrEmpty (typeGuids))
+				return GetDotNetProjectSubtype (typeGuids.Split (';').Select (t => t.Trim ()));
+			else
+				return null;
+		}
+
+		internal static DotNetProjectSubtypeNode GetDotNetProjectSubtype (IEnumerable<string> typeGuids)
+		{
+			Type ptype = null;
+			DotNetProjectSubtypeNode foundNode = null;
+			foreach (string guid in typeGuids) {
+				foreach (DotNetProjectSubtypeNode st in GetItemSubtypeNodes ()) {
+					if (st.SupportsType (guid)) {
+						if (ptype == null || ptype.IsAssignableFrom (st.Type)) {
+							ptype = st.Type;
+							foundNode = st;
 						}
 					}
 				}
-				return foundNode;
 			}
-			return null;
+			return foundNode;
 		}
-		
+
 		static IEnumerable<ItemTypeNode> GetItemTypeNodes ()
 		{
 			foreach (ExtensionNode node in AddinManager.GetExtensionNodes (ItemTypesExtensionPath)) {
@@ -284,12 +318,10 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 		
 		public static string ToMSBuildPath (string baseDirectory, string absPath)
 		{
-			absPath = EscapeString (absPath);
 			if (baseDirectory != null) {
-				absPath = FileService.NormalizeRelativePath (FileService.AbsoluteToRelativePath (
-				         baseDirectory, absPath));
+				absPath = FileService.NormalizeRelativePath (FileService.AbsoluteToRelativePath (baseDirectory, absPath));
 			}
-			return absPath.Replace ('/', '\\');
+			return EscapeString (absPath).Replace ('/', '\\');
 		}
 		
 		internal static string ToMSBuildPathRelative (string baseDirectory, string absPath)
@@ -353,7 +385,7 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 			
 			// If we're on Windows, don't need to fix file casing.
 			if (Platform.IsWindows) {
-				resultPath = Path.GetFullPath (path);
+				resultPath = FileService.GetFullPath (path);
 				return true;
 			}
 			
@@ -500,15 +532,12 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 		
 		static string GetExeLocation (TargetRuntime runtime, string toolsVersion)
 		{
-			FilePath sourceExe = typeof(ProjectBuilder).Assembly.Location;
+			FilePath sourceExe = typeof(MSBuildProjectService).Assembly.Location;
 
 			if ((runtime is MsNetTargetRuntime) && int.Parse (toolsVersion.Split ('.')[0]) >= 4)
 				toolsVersion = "dotnet." + toolsVersion;
 
-			if (toolsVersion == REFERENCED_MSBUILD_TOOLS)
-				return sourceExe;
-			
-			var exe = sourceExe.ParentDirectory.Combine ("MSBuild", toolsVersion, sourceExe.FileName);
+			var exe = sourceExe.ParentDirectory.Combine ("MSBuild", toolsVersion, "MonoDevelop.Projects.Formats.MSBuild.exe");
 			if (File.Exists (exe))
 				return exe;
 			
@@ -583,6 +612,13 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 
 			return globalGroup.GetPropertyValue ("ProjectTypeGuids");
 		}
+
+		internal static UnknownProjectTypeNode GetUnknownProjectTypeInfo (string[] guids)
+		{
+			var nodes = AddinManager.GetExtensionNodes<UnknownProjectTypeNode> ("/MonoDevelop/ProjectModel/UnknownMSBuildProjectTypes")
+				.Where (p => guids.Any (p.MatchesGuid)).ToList ();
+			return nodes.FirstOrDefault (n => !n.IsSolvable) ?? nodes.FirstOrDefault (n => n.IsSolvable);
+		}
 	}
 	
 	class MSBuildDataContext: DataContext
@@ -591,6 +627,8 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 		{
 			if (type == typeof(bool))
 				return new MSBuildBoolDataType ();
+			else if (type == typeof(bool?))
+				return new MSBuildNullableBoolDataType ();
 			else
 				return base.CreateConfigurationDataType (type);
 		}
@@ -604,13 +642,55 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 		
 		internal protected override DataNode OnSerialize (SerializationContext serCtx, object mapData, object value)
 		{
-			return new DataValue (Name, (bool)value ? "True" : "False");
+			return new MSBuildBoolDataValue (Name, (bool) value);
 		}
 		
 		internal protected override object OnDeserialize (SerializationContext serCtx, object mapData, DataNode data)
 		{
 			return String.Equals (((DataValue)data).Value, "true", StringComparison.OrdinalIgnoreCase);
 		}
+	}
+
+	class MSBuildBoolDataValue : DataValue
+	{
+		public MSBuildBoolDataValue (string name, bool value)
+			: base (name, value ? "True" : "False")
+		{
+			RawValue = value;
+		}
+
+		public bool RawValue { get; private set; }
+	}
+
+	class MSBuildNullableBoolDataType: PrimitiveDataType
+	{
+		public MSBuildNullableBoolDataType (): base (typeof(bool))
+		{
+		}
+
+		internal protected override DataNode OnSerialize (SerializationContext serCtx, object mapData, object value)
+		{
+			return new MSBuildNullableBoolDataValue (Name, (bool?) value);
+		}
+
+		internal protected override object OnDeserialize (SerializationContext serCtx, object mapData, DataNode data)
+		{
+			var d = (DataValue)data;
+			if (string.IsNullOrEmpty (d.Value))
+				return (bool?) null;
+			return (bool?) String.Equals (d.Value, "true", StringComparison.OrdinalIgnoreCase);
+		}
+	}
+
+	class MSBuildNullableBoolDataValue : DataValue
+	{
+		public MSBuildNullableBoolDataValue (string name, bool? value)
+			: base (name, value.HasValue? (value.Value? "True" : "False") : null)
+		{
+			RawValue = value;
+		}
+
+		public bool? RawValue { get; private set; }
 	}
 	
 	public class MSBuildResourceHandler: IResourceHandler

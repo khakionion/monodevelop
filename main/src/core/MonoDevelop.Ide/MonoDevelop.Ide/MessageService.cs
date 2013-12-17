@@ -177,6 +177,8 @@ namespace MonoDevelop.Ide
 
 		public static AlertButton ShowException (Gtk.Window parent, Exception e, string message, string title, params AlertButton[] buttons)
 		{
+			if (!IdeApp.IsInitialized)
+				throw new Exception ("IdeApp has not been initialized. Progagating the exception.", e); 
 			return messageService.ShowException (parent, title, message, e, buttons);
 		}
 		#endregion
@@ -327,6 +329,8 @@ namespace MonoDevelop.Ide
 			}
 			dialog.TransientFor = parent;
 			dialog.DestroyWithParent = true;
+			if (dialog.Title == null)
+				dialog.Title = BrandingService.ApplicationName;
 			PlaceDialog (dialog, parent);
 			return Mono.TextEditor.GtkWorkarounds.RunDialogWithNotification (dialog);
 		}
@@ -442,6 +446,9 @@ namespace MonoDevelop.Ide
 		{
 			public AlertButton ShowException (Gtk.Window parent, string title, string message, Exception e, params AlertButton[] buttons)
 			{
+				if ((buttons == null || buttons.Length == 0) && (e is UserException) && ((UserException)e).AlreadyReportedToUser)
+					return AlertButton.Ok;
+
 				var exceptionDialog = new ExceptionDialog () {
 					Buttons = buttons ?? new AlertButton[] { AlertButton.Ok },
 					Title = title ?? GettextCatalog.GetString ("An error has occurred"),

@@ -53,6 +53,8 @@ namespace MonoDevelop.SourceEditor
 
 		public void UpdateStyleParent (Project styleParent, string mimeType)
 		{
+			if (styleParent != null && policyContainer == styleParent.Policies)
+				return;
 			if (policyContainer != null)
 				policyContainer.PolicyChanged -= HandlePolicyChanged;
 
@@ -67,12 +69,15 @@ namespace MonoDevelop.SourceEditor
 
 			currentPolicy = policyContainer.Get<TextStylePolicy> (mimeTypes);
 			policyContainer.PolicyChanged += HandlePolicyChanged;
+			if (changed != null)
+				this.changed (this, EventArgs.Empty);
 		}
 
 		void HandlePolicyChanged (object sender, MonoDevelop.Projects.Policies.PolicyChangedEventArgs args)
 		{
 			currentPolicy = policyContainer.Get<TextStylePolicy> (mimeTypes);
-			this.changed (this, EventArgs.Empty);
+			if (changed != null)
+				this.changed (this, EventArgs.Empty);
 		}
 
 		public bool OverrideDocumentEolMarker {
@@ -181,9 +186,18 @@ namespace MonoDevelop.SourceEditor
 		public Pango.FontDescription Font {
 			get { return DefaultSourceEditorOptions.Instance.Font; }
 		}
-
+		
 		public string FontName {
 			get { return DefaultSourceEditorOptions.Instance.FontName; }
+			set { throw new NotSupportedException (); }
+		}
+
+		public Pango.FontDescription GutterFont {
+			get { return DefaultSourceEditorOptions.Instance.GutterFont; }
+		}
+		
+		public string GutterFontName {
+			get { return DefaultSourceEditorOptions.Instance.GutterFontName; }
 			set { throw new NotSupportedException (); }
 		}
 
@@ -252,6 +266,11 @@ namespace MonoDevelop.SourceEditor
 			set { DefaultSourceEditorOptions.Instance.ShowWhitespaces = value; }
 		}
 
+		public IncludeWhitespaces IncludeWhitespaces {
+			get { return DefaultSourceEditorOptions.Instance.IncludeWhitespaces; }
+			set { DefaultSourceEditorOptions.Instance.IncludeWhitespaces = value; }
+		}
+
 		public bool WrapLines {
 			get { return DefaultSourceEditorOptions.Instance.WrapLines; }
 			set { DefaultSourceEditorOptions.Instance.WrapLines = value; }
@@ -300,10 +319,6 @@ namespace MonoDevelop.SourceEditor
 
 		public bool EnableAutoCodeCompletion {
 			get { return DefaultSourceEditorOptions.Instance.EnableAutoCodeCompletion; }
-		}
-
-		public bool EnableCodeCompletion {
-			get { return DefaultSourceEditorOptions.Instance.EnableCodeCompletion; }
 		}
 
 		public bool EnableSemanticHighlighting {

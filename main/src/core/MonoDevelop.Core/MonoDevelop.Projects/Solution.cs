@@ -84,6 +84,21 @@ namespace MonoDevelop.Projects
 				rootFolder = value;
 			}
 		}
+
+		/// <summary>
+		/// Folder where to add solution files, when none is created
+		/// </summary>
+		public SolutionFolder DefaultSolutionFolder {
+			get {
+				var itemsFolder = (SolutionFolder)RootFolder.Items.FirstOrDefault (item => item.Name == "Solution Items");
+				if (itemsFolder == null) {
+					itemsFolder = new SolutionFolder ();
+					itemsFolder.Name = "Solution Items";
+					RootFolder.AddItem (itemsFolder);
+				}
+				return itemsFolder;
+			}
+		}
 		
 		// Does not include solution folders
 		public ReadOnlyCollection<SolutionItem> Items {
@@ -564,17 +579,7 @@ namespace MonoDevelop.Projects
 				monitor.EndTask ();
 			}
 		}
-		
-		protected internal override bool OnGetNeedsBuilding (ConfigurationSelector configuration)
-		{
-			return RootFolder.NeedsBuilding (configuration);
-		}
-		
-		protected internal override void OnSetNeedsBuilding (bool val, ConfigurationSelector configuration)
-		{
-			RootFolder.SetNeedsBuilding (val, configuration);
-		}
-		
+
 		protected virtual void OnStartupItemChanged(EventArgs e)
 		{
 			if (StartupItemChanged != null)

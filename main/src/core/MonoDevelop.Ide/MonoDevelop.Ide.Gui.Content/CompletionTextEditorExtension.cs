@@ -44,10 +44,19 @@ namespace MonoDevelop.Ide.Gui.Content
 		bool autoHideCompletionWindow = true, autoHideParameterWindow = true;
 
 		#region Completion related IDE
-		public readonly static PropertyWrapper<bool> EnableCodeCompletion = PropertyService.Wrap ("EnableCodeCompletion", true);
-		public readonly static PropertyWrapper<bool> EnableParameterInsight = PropertyService.Wrap ("EnableParameterInsight", true);
+//		public readonly static PropertyWrapper<bool> EnableCodeCompletion = PropertyService.Wrap ("EnableCodeCompletion", true);
+//		public readonly static PropertyWrapper<bool> EnableParameterInsight = PropertyService.Wrap ("EnableParameterInsight", true);
 		public readonly static PropertyWrapper<bool> EnableAutoCodeCompletion = PropertyService.Wrap ("EnableAutoCodeCompletion", true);
-//		public readonly static PropertyWrapper<bool> HideObsoleteItems = PropertyService.Wrap ("HideObsoleteItems", false);
+		public readonly static PropertyWrapper<bool> AddImportedItemsToCompletionList = PropertyService.Wrap ("AddImportedItemsToCompletionList", false);
+		public readonly static PropertyWrapper<bool> IncludeKeywordsInCompletionList = PropertyService.Wrap ("IncludeKeywordsInCompletionList", true);
+		public readonly static PropertyWrapper<bool> IncludeCodeSnippetsInCompletionList = PropertyService.Wrap ("IncludeCodeSnippetsInCompletionList", true);
+		public readonly static PropertyWrapper<bool> AddParenthesesAfterCompletion = PropertyService.Wrap ("AddParenthesesAfterCompletion", false);
+		public readonly static PropertyWrapper<bool> AddOpeningOnly = PropertyService.Wrap ("AddOpeningOnly", false);
+		public readonly static PropertyWrapper<int>  CompletionListRows = PropertyService.Wrap ("CompletionListRows", 7);
+
+		public readonly static PropertyWrapper<bool> FilterCompletionListByEditorBrowsable = PropertyService.Wrap ("FilterCompletionListByEditorBrowsable", true);
+		public readonly static PropertyWrapper<bool> IncludeEditorBrowsableAdvancedMembers = PropertyService.Wrap ("IncludeEditorBrowsableAdvancedMembers", true);
+
 		#endregion
 
 		public ICompletionWidget CompletionWidget {
@@ -55,6 +64,12 @@ namespace MonoDevelop.Ide.Gui.Content
 			set;
 		}
 
+
+		public virtual string CompletionLanguage {
+			get {
+				return "Other";
+			}
+		}
 
 		public void ShowCompletion (ICompletionDataList completionList)
 		{
@@ -112,7 +127,7 @@ namespace MonoDevelop.Ide.Gui.Content
 				return res;
 			
 			// don't complete on block selection
-			if (!EnableCodeCompletion || Document.Editor.SelectionMode == Mono.TextEditor.SelectionMode.Block)
+			if (/*!EnableCodeCompletion ||*/ Document.Editor.SelectionMode == Mono.TextEditor.SelectionMode.Block)
 				return res;
 			
 			// Handle code completion
@@ -135,7 +150,7 @@ namespace MonoDevelop.Ide.Gui.Content
 				}
 			}
 			
-			if (EnableParameterInsight && CompletionWidget != null) {
+			if (/*EnableParameterInsight &&*/ CompletionWidget != null) {
 				CodeCompletionContext ctx = CompletionWidget.CurrentCodeCompletionContext;
 				var paramProvider = HandleParameterCompletion (ctx, keyChar);
 				if (paramProvider != null)
@@ -177,7 +192,6 @@ namespace MonoDevelop.Ide.Gui.Content
 				CompletionWindowManager.HideWindow ();
 			if (autoHideParameterWindow)
 				ParameterInformationWindowManager.HideWindow (this, CompletionWidget);
-			CompletionWindowManager.UpdateCursorPosition ();
 			ParameterInformationWindowManager.UpdateCursorPosition (this, CompletionWidget);
 		}
 
@@ -265,7 +279,7 @@ namespace MonoDevelop.Ide.Gui.Content
 		[CommandHandler (TextEditorCommands.ShowParameterCompletionWindow)]
 		public virtual void RunParameterCompletionCommand ()
 		{
-			if (Document.Editor.SelectionMode == Mono.TextEditor.SelectionMode.Block)
+			if (Document.Editor.SelectionMode == Mono.TextEditor.SelectionMode.Block || CompletionWidget == null)
 				return;
 			ParameterDataProvider cp = null;
 			int cpos;
@@ -325,9 +339,6 @@ namespace MonoDevelop.Ide.Gui.Content
 					break;
 				pos++;
 			}
-			// for named arguments invoke(arg:<Expr>);
-			if (pos + 1 < len && Editor.GetCharAt (pos) == ':' && Editor.GetCharAt (pos + 1) != ':') 
-				pos++;
 			wlen = pos - cpos;
 			return true;
 		}
@@ -430,20 +441,34 @@ namespace MonoDevelop.Ide.Gui.Content
 			return -1;
 		}
 		
+		void HandlePaste (int insertionOffset, string text, int insertedChars)
+		{
+			ParameterInformationWindowManager.HideWindow (this, CompletionWidget);
+			CompletionWindowManager.HideWindow ();
+		}
+
+		void HandleFocusOutEvent (object o, Gtk.FocusOutEventArgs args)
+		{
+			ParameterInformationWindowManager.HideWindow (this, CompletionWidget);
+			CompletionWindowManager.HideWindow ();
+		}
+
 		public override void Initialize ()
 		{
 			base.Initialize ();
-
 			CompletionWindowManager.WindowClosed += HandleWindowClosed;
 			CompletionWidget = Document.GetContent <ICompletionWidget> ();
 			if (CompletionWidget != null)
 				CompletionWidget.CompletionContextChanged += OnCompletionContextChanged;
-			if (document.Editor.Parent != null) {
-				document.Editor.Parent.TextArea.FocusOutEvent += delegate {
-					ParameterInformationWindowManager.HideWindow (this, CompletionWidget);
-					CompletionWindowManager.HideWindow ();
-				};
-			}
+			document.Editor.Caret.PositionChanged += HandlePositionChanged;
+			document.Editor.Paste += HandlePaste;
+			if (document.Editor.Parent != null)
+				document.Editor.Parent.TextArea.FocusOutEvent += HandleFocusOutEvent;
+		}
+
+		void HandlePositionChanged (object sender, Mono.TextEditor.DocumentLocationEventArgs e)
+		{
+			CompletionWindowManager.UpdateCursorPosition ();
 		}
 
 		void HandleWindowClosed (object sender, EventArgs e)
@@ -459,6 +484,10 @@ namespace MonoDevelop.Ide.Gui.Content
 				ParameterInformationWindowManager.HideWindow (this, CompletionWidget);
 
 				disposed = true;
+				if (document.Editor.Parent != null)
+					document.Editor.Parent.TextArea.FocusOutEvent -= HandleFocusOutEvent;
+				document.Editor.Paste -= HandlePaste;
+				document.Editor.Caret.PositionChanged -= HandlePositionChanged;
 				CompletionWindowManager.WindowClosed -= HandleWindowClosed;
 				if (CompletionWidget != null)
 					CompletionWidget.CompletionContextChanged -= OnCompletionContextChanged;

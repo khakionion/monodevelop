@@ -33,6 +33,7 @@ using System.ComponentModel;
 using MonoDevelop.Components.PropertyGrid.PropertyEditors;
 using Gtk;
 using Gdk;
+using Mono.TextEditor;
 
 namespace MonoDevelop.Components.PropertyGrid
 {
@@ -131,13 +132,18 @@ namespace MonoDevelop.Components.PropertyGrid
 		{
 			layout.GetPixelSize (out width, out height);
 		}
-		
-		public virtual void Render (Drawable window, Gdk.Rectangle bounds, StateType state)
+
+		public virtual void Render (Gdk.Drawable window, Cairo.Context ctx, Gdk.Rectangle bounds, StateType state)
 		{
 			int w, h;
 			layout.GetPixelSize (out w, out h);
 			int dy = (bounds.Height - h) / 2;
-			window.DrawLayout (container.Style.TextGC (state), bounds.X, dy + bounds.Y, layout);
+
+			ctx.Save ();
+			ctx.SetSourceColor (container.Style.Text (state).ToCairoColor ());
+			ctx.MoveTo (bounds.X, dy + bounds.Y);
+			Pango.CairoHelper.ShowLayout (ctx, layout);
+			ctx.Restore ();
 		}
 		
 		protected virtual IPropertyEditor CreateEditor (Gdk.Rectangle cell_area, StateType state)
@@ -344,8 +350,10 @@ namespace MonoDevelop.Components.PropertyGrid
 			
 			Gdk.Rectangle rect = Allocation;
 			rect.Inflate (-3, 0);// Add some margin
-			
-			cell.Render (this.GdkWindow, rect, StateType.Normal);
+
+			using (Cairo.Context ctx = Gdk.CairoHelper.Create (this.GdkWindow)) {
+				cell.Render (this.GdkWindow, ctx, rect, StateType.Normal);
+			}
 			return res;
 		}
 	}

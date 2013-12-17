@@ -56,8 +56,7 @@ namespace MonoDevelop.Xml.StateEngine
 			internal protected set {
 				parent = value;
 				Debug.Assert (parent != null || !region.Begin.IsEmpty, "When parent is null, start must not be negative.");
-				Debug.Assert (parent.IsComplete, "Parent must be complete.");
-				Debug.Assert (region.Begin > parent.Region.End, "Start must greater than parent's end.");
+				Debug.Assert (parent.Region.End.IsEmpty || region.Begin >= parent.Region.End, "Start must be >= parent's end.");
 			}
 		}
 		
@@ -78,7 +77,7 @@ namespace MonoDevelop.Xml.StateEngine
 		public void End (TextLocation endLocation)
 		{
 			Debug.Assert (region.Begin < endLocation, "End must be greater than start.");
-			Debug.Assert (region.Begin < region.End, "XObject cannot be ended multiple times.");
+			Debug.Assert (region.End.IsEmpty || region.Begin < region.End, "XObject cannot be ended multiple times.");
 			region = new DomRegion (region.Begin, endLocation);
 		}
 		
@@ -137,7 +136,7 @@ namespace MonoDevelop.Xml.StateEngine
 			get { return nextSibling; }
 			internal protected set {
 				Debug.Assert (nextSibling == null, "The NextSibling cannot be changed after it is set.");
-				Debug.Assert (value.Region.Begin > Region.Begin, "Start must greater than parent's end.");
+				Debug.Assert (value.Region.Begin >= Region.End, "Start must >= previous sibling's end.");
 				nextSibling = value;
 			}
 		}
@@ -149,7 +148,7 @@ namespace MonoDevelop.Xml.StateEngine
 	{
 		string prefix;
 		string name;
-		
+
 		public XName (string prefix, string name)
 		{
 			this.prefix = prefix;
@@ -203,23 +202,13 @@ namespace MonoDevelop.Xml.StateEngine
 			return hash;
 		}
 		
-		public XName ToLower ()
-		{
-			string lowerName = name == null? null : name.ToLower ();
-			return prefix == null
-				? new XName (lowerName)
-				: new XName (prefix.ToLower (), lowerName);
-		}
-		
-		public XName ToUpper ()
-		{
-			string upperName = name == null? null : name.ToUpper ();
-			return prefix == null
-				? new XName (upperName)
-				: new XName (prefix.ToUpper (), upperName);
-		}
-		
 		#endregion
+
+		public static bool Equals (XName a, XName b, bool ignoreCase)
+		{
+			StringComparison comp = ignoreCase? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+			return string.Equals (a.prefix, b.prefix, comp) && string.Equals (a.name, b.name, comp);
+		}
 	}
 	
 	public abstract class XContainer : XNode
@@ -415,7 +404,7 @@ namespace MonoDevelop.Xml.StateEngine
 		public XName Name {
 			get { return name; }
 			set {
-				Debug.Assert (!IsNamed, "Should not name node more than once.");
+				Debug.Assert ((value.HasPrefix && !name.HasPrefix) || !IsNamed, "Should not name node more than once.");
 				name = value;
 			}
 		}
@@ -437,7 +426,7 @@ namespace MonoDevelop.Xml.StateEngine
 			get { return nextSibling; }
 			internal protected set {
 				Debug.Assert (nextSibling == null, "The NextSibling cannot be changed after it is set.");
-				Debug.Assert (value.Region.Begin > Region.Begin, "Start must greater than parent's end.");
+				Debug.Assert (value.Region.Begin >= Region.End, "Start must be >= previous sibling's end.");
 				nextSibling = value;
 			}
 		}
@@ -500,6 +489,36 @@ namespace MonoDevelop.Xml.StateEngine
 				}
 				return null;
 			}
+		}
+
+		public XAttribute this [int index] {
+			get {
+				XAttribute current = firstChild;
+				while (current != null) {
+					if (index == 0)
+						return current;
+					index--;
+					current = current.NextSibling;
+				}
+				throw new IndexOutOfRangeException ();
+			}
+		}
+
+		public XAttribute Get (XName name, bool ignoreCase)
+		{
+			XAttribute current = firstChild;
+			while (current != null) {
+				if (XName.Equals (current.Name, name, ignoreCase))
+					return current;
+				current = current.NextSibling;
+			}
+			return null;
+		}
+
+		public string GetValue (XName name, bool ignoreCase)
+		{
+			var att = Get (name, ignoreCase);
+			return att != null? att.Value : null;
 		}
 		
 		public void AddAttribute (XAttribute newChild)

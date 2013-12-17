@@ -49,8 +49,6 @@ namespace MonoDevelop.Debugger
 			stackStore = new TreeStore (typeof(string), typeof(string), typeof(int), typeof(int));
 			treeStack.Model = stackStore;
 			var crt = new CellRendererText ();
-			crt.WrapWidth = 200;
-			crt.WrapMode = Pango.WrapMode.WordChar;
 			treeStack.AppendColumn ("", crt, "markup", 0);
 			treeStack.ShowExpanders = false;
 			
@@ -60,10 +58,8 @@ namespace MonoDevelop.Debugger
 			
 			exception.Changed += HandleExceptionChanged;
 			treeStack.SizeAllocated += delegate(object o, SizeAllocatedArgs args) {
-				if (crt.WrapWidth != args.Allocation.Width) {
+				if (crt.WrapWidth != args.Allocation.Width)
 					crt.WrapWidth = args.Allocation.Width;
-					Fill ();
-				}
 			};
 			
 			Fill ();
@@ -96,10 +92,10 @@ namespace MonoDevelop.Debugger
 			stackStore.Clear ();
 			valueView.ClearValues ();
 
-			labelType.Markup = GettextCatalog.GetString ("<b>{0}</b> has been thrown", exception.Type);
-			labelMessage.Text = string.IsNullOrEmpty (exception.Message)?
-			                    string.Empty: 
-			                    Mono.Debugging.Evaluation.ExpressionEvaluator.UnEscapeString (exception.Message);
+			labelType.Markup = GettextCatalog.GetString ("A <b>{0}</b> was thrown.", exception.Type);
+			labelMessage.Text = string.IsNullOrEmpty (exception.Message) ?
+			                    string.Empty : 
+			                    exception.Message;
 			
 			ShowStackTrace (exception, false);
 			
@@ -108,7 +104,7 @@ namespace MonoDevelop.Debugger
 				valueView.ExpandRow (new TreePath ("0"), false);
 			}
 			if (exception.StackIsEvaluating) {
-				stackStore.AppendValues ("Loading...", "", 0, 0);
+				stackStore.AppendValues (GettextCatalog.GetString ("Loading..."), "", 0, 0);
 			}
 		}
 		
@@ -122,7 +118,7 @@ namespace MonoDevelop.Debugger
 			}
 
 			foreach (ExceptionStackFrame frame in exc.StackTrace) {
-				string text = GLib.Markup.EscapeText (frame.DisplayText);
+				string text = string.Format ("<b>{0}</b>", GLib.Markup.EscapeText (frame.DisplayText));
 				if (!string.IsNullOrEmpty (frame.File)) {
 					text += "\n<small>" + GLib.Markup.EscapeText (frame.File);
 					if (frame.Line > 0) {
@@ -132,6 +128,7 @@ namespace MonoDevelop.Debugger
 					}
 					text += "</small>";
 				}
+
 				if (!it.Equals (TreeIter.Zero))
 					stackStore.AppendValues (it, text, frame.File, frame.Line, frame.Column);
 				else
@@ -168,9 +165,11 @@ namespace MonoDevelop.Debugger
 			box.Spacing = 6;
 			box.PackStart (widget, true, true, 0);
 			HButtonBox buttonBox = new HButtonBox ();
+			buttonBox.Layout = ButtonBoxStyle.End;
 			buttonBox.BorderWidth = 6;
+			buttonBox.Spacing = 12;
 
-			var copy = new Gtk.Button (GettextCatalog.GetString ("Copy to Clipboard"));
+			var copy = new Gtk.Button (GettextCatalog.GetString ("Copy"));
 			buttonBox.PackStart (copy, false, false, 0);
 			copy.Clicked += HandleCopyClicked;
 
@@ -205,24 +204,26 @@ namespace MonoDevelop.Debugger
 		}
 	}
 
-	class ExceptionCaughtMessage
+	class ExceptionCaughtMessage : IDisposable
 	{
 		ExceptionInfo ex;
-		FilePath file;
-		int line;
 		ExceptionCaughtDialog dialog;
 		ExceptionCaughtButton button;
 		ExceptionCaughtMiniButton miniButton;
 
 		public ExceptionCaughtMessage (ExceptionInfo val, FilePath file, int line, int col)
 		{
+			File = file;
+			Line = line;
 			ex = val;
-			this.file = file;
-			this.line = line;
 		}
 
 		public FilePath File {
-			get { return file; }
+			get; private set;
+		}
+
+		public int Line {
+			get; private set;
 		}
 
 		public bool IsMinimized {
@@ -242,11 +243,10 @@ namespace MonoDevelop.Debugger
 		{
 			if (dialog != null) {
 				dialog.Destroy ();
+				dialog = null;
 			}
 			if (button == null) {
-				button = new ExceptionCaughtButton (ex, this);
-				button.File = file;
-				button.Line = line;
+				button = new ExceptionCaughtButton (ex, this, File, Line);
 				TextEditorService.RegisterExtension (button);
 			}
 			if (miniButton != null) {
@@ -266,9 +266,7 @@ namespace MonoDevelop.Debugger
 				button = null;
 			}
 			if (miniButton == null) {
-				miniButton = new ExceptionCaughtMiniButton (this);
-				miniButton.File = file;
-				miniButton.Line = line;
+				miniButton = new ExceptionCaughtMiniButton (this, File, Line);
 				TextEditorService.RegisterExtension (miniButton);
 			}
 		}
@@ -307,11 +305,13 @@ namespace MonoDevelop.Debugger
 		Gdk.Pixbuf closeSelImage;
 		Gdk.Pixbuf closeSelOverImage;
 
-		public ExceptionCaughtButton (ExceptionInfo val, ExceptionCaughtMessage dlg)
+		public ExceptionCaughtButton (ExceptionInfo val, ExceptionCaughtMessage dlg, FilePath file, int line)
 		{
 			this.exception = val;
 			this.dlg = dlg;
 			OffsetX = 6;
+			File = file;
+			Line = line;
 			closeSelImage = Gdk.Pixbuf.LoadFromResource ("MonoDevelop.Close.Selected.png");
 			closeSelOverImage = Gdk.Pixbuf.LoadFromResource ("MonoDevelop.Close.Selected.Over.png");
 		}
@@ -395,10 +395,12 @@ namespace MonoDevelop.Debugger
 	{
 		ExceptionCaughtMessage dlg;
 
-		public ExceptionCaughtMiniButton (ExceptionCaughtMessage dlg)
+		public ExceptionCaughtMiniButton (ExceptionCaughtMessage dlg, FilePath file, int line)
 		{
 			this.dlg = dlg;
 			OffsetX = 6;
+			File = file;
+			Line = line;
 		}
 
 		protected override void OnLineDeleted ()

@@ -266,8 +266,9 @@ namespace MonoDevelop.Refactoring
 					}
 				}
 				
-				InsertionCursorEditMode mode = new InsertionCursorEditMode (editor.Editor.Parent, CodeGenerationService.GetInsertionPoints (editor, this.cls));
-				ModeHelpWindow helpWindow = new ModeHelpWindow ();
+				var mode = new InsertionCursorEditMode (editor.Editor.Parent, CodeGenerationService.GetInsertionPoints (editor, this.cls));
+				var helpWindow = new ModeHelpWindow ();
+				helpWindow.Shown += (s, a) => DesktopService.RemoveWindowShadow (helpWindow);
 				helpWindow.TransientFor = IdeApp.Workbench.RootWindow;
 				helpWindow.TitleText = GettextCatalog.GetString ("<b>Override -- Targeting</b>");
 				helpWindow.Items.Add (new KeyValuePair<string, string> (GettextCatalog.GetString ("<b>Key</b>"), GettextCatalog.GetString ("<b>Behavior</b>")));

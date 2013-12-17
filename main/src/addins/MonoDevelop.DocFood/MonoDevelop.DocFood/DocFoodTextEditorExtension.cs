@@ -35,7 +35,7 @@ using ICSharpCode.NRefactory.CSharp.TypeSystem;
 
 namespace MonoDevelop.DocFood
 {
-	public class DocFoodTextEditorExtension : TextEditorExtension
+	class DocFoodTextEditorExtension : TextEditorExtension
 	{
 		TextEditorData textEditorData {
 			get {
@@ -106,7 +106,7 @@ namespace MonoDevelop.DocFood
 			
 			using (var undo = textEditorData.OpenUndoGroup ()) {
 				insertedLength = textEditorData.Replace (offset, insertedLength, documentation);
-				if (SelectSummary (offset, documentation) == false)
+				if (SelectSummary (offset, insertedLength, documentation) == false)
 					textEditorData.Caret.Offset = offset + insertedLength;
 			}
 			return false;
@@ -121,11 +121,18 @@ namespace MonoDevelop.DocFood
 		/// <param name='offset'>
 		/// Offset in document where the documentation is inserted
 		/// </param>
+		/// <param name='insertedLength'>
+		/// the length of the summary content.
+		/// </param>
 		/// <param name='documentation'>
 		/// Documentation containing the summary
 		/// </param>
-		bool SelectSummary (int offset, string documentation)
+		bool SelectSummary (int offset, int insertedLength, string documentation)
 		{
+			//Adjust the line endings to what the document uses to assure correct offset within the documentation
+			if (insertedLength > documentation.Length)
+				documentation = documentation.Replace ("\n", "\r\n");
+
 			const string summaryStart = "<summary>";
 			const string summaryEnd = "</summary>";
 			int start = documentation.IndexOf (summaryStart);

@@ -25,52 +25,66 @@
 // THE SOFTWARE.
 
 using System;
-using MonoDevelop.CSharp.Resolver;
 using ICSharpCode.NRefactory.CSharp;
-using System.Collections.Generic;
-using Mono.TextEditor;
 using MonoDevelop.Projects;
 using MonoDevelop.Core;
 using MonoDevelop.Refactoring;
 using ICSharpCode.NRefactory.CSharp.Refactoring;
-using ICSharpCode.NRefactory.TypeSystem;
-using ICSharpCode.NRefactory.TypeSystem.Implementation;
-using ICSharpCode.NRefactory.CSharp.Resolver;
-using System.Linq;
 using MonoDevelop.Ide.TypeSystem;
 using ICSharpCode.NRefactory;
-using ICSharpCode.NRefactory.Semantics;
-using ICSharpCode.NRefactory.CSharp.TypeSystem;
 using System.Threading;
 using MonoDevelop.Ide.Gui;
 using System.Diagnostics;
 using MonoDevelop.CSharp.Refactoring.CodeIssues;
+using Mono.TextEditor;
+using ICSharpCode.NRefactory.CSharp.Resolver;
+using MonoDevelop.CSharp.Formatting;
 
 namespace MonoDevelop.CSharp.Refactoring.CodeActions
 {
-	public class MDRefactoringContext : RefactoringContext
+	public class MDRefactoringContext : RefactoringContext, IRefactoringContext
 	{
-		public MonoDevelop.Ide.Gui.Document Document {
+		public TextEditorData TextEditor {
+			get;
+			private set;
+		}
+
+		public DotNetProject Project {
 			get;
 			private set;
 		}
 
 		public bool IsInvalid {
 			get {
-				return Resolver == null || Document == null || Document.ParsedDocument.HasErrors;
+				if (Resolver == null || TextEditor == null)
+					return true;
+				return ParsedDocument == null;
 			}
+		}
+
+		public ParsedDocument ParsedDocument {
+			get;
+			private set;
 		}
 
 		public SyntaxTree Unit {
 			get {
 				Debug.Assert (!IsInvalid);
-				return Document.ParsedDocument.GetAst<SyntaxTree> ();
+				return Resolver.RootNode as SyntaxTree;
+			}
+		}
+
+		public override string DefaultNamespace {
+			get {
+				if (Project == null || TextEditor == null || string.IsNullOrEmpty (TextEditor.FileName))
+					return null;
+				return Project.GetDefaultNamespace (TextEditor.FileName);
 			}
 		}
 
 		public override bool Supports (Version version)
 		{
-			var project = Document.Project as DotNetProject;
+			var project = Project;
 			if (project == null)
 				return true;
 			switch (project.TargetFramework.ClrVersion) {
@@ -87,97 +101,130 @@ namespace MonoDevelop.CSharp.Refactoring.CodeActions
 
 		public override ICSharpCode.NRefactory.CSharp.TextEditorOptions TextEditorOptions {
 			get {
-				return Document.Editor.CreateNRefactoryTextEditorOptions ();
+				return TextEditor.CreateNRefactoryTextEditorOptions ();
 			}
 		}
-		
+
 		public override bool IsSomethingSelected { 
 			get {
-				return Document.Editor.IsSomethingSelected;
+				return TextEditor.IsSomethingSelected;
 			}
 		}
-		
+
 		public override string SelectedText {
 			get {
-				return Document.Editor.SelectedText;
+				return TextEditor.SelectedText;
 			}
 		}
-		
+
 		public override TextLocation SelectionStart {
 			get {
-				return Document.Editor.MainSelection.Start;
+				return TextEditor.MainSelection.Start;
 			}
 		}
-		
+
 		public override TextLocation SelectionEnd { 
 			get {
-				return Document.Editor.MainSelection.End;
+				return TextEditor.MainSelection.End;
 			}
 		}
 
 		public override int GetOffset (TextLocation location)
 		{
-			return Document.Editor.LocationToOffset (location);
+			return TextEditor.LocationToOffset (location);
 		}
-		
+
 		public override TextLocation GetLocation (int offset)
 		{
-			return Document.Editor.OffsetToLocation (offset);
+			return TextEditor.OffsetToLocation (offset);
 		}
 
 		public override string GetText (int offset, int length)
 		{
-			return Document.Editor.GetTextAt (offset, length);
-		}
-		
-		public override string GetText (ICSharpCode.NRefactory.Editor.ISegment segment)
-		{
-			return Document.Editor.GetTextAt (segment.Offset, segment.Length);
-		}
-		
-		public override ICSharpCode.NRefactory.Editor.IDocumentLine GetLineByOffset (int offset)
-		{
-			return Document.Editor.GetLineByOffset (offset);
+			return TextEditor.GetTextAt (offset, length);
 		}
 
-		readonly TextLocation location;
+		public override string GetText (ICSharpCode.NRefactory.Editor.ISegment segment)
+		{
+			return TextEditor.GetTextAt (segment.Offset, segment.Length);
+		}
+
+		public override ICSharpCode.NRefactory.Editor.IDocumentLine GetLineByOffset (int offset)
+		{
+			return TextEditor.GetLineByOffset (offset);
+		}
+
+		readonly Document document;
+		TextLocation location;
+
 		public override TextLocation Location {
 			get {
 				return location;
 			}
 		}
 
+		internal void SetLocation (TextLocation loc)
+		{
+			if (document != null)
+				location = RefactoringService.GetCorrectResolveLocation (document, loc);
+			else
+				location = loc;
+		}
+
+		readonly CSharpFormattingOptions formattingOptions;
+
+		public CSharpFormattingOptions FormattingOptions {
+			get {
+				return formattingOptions;
+			}
+		}
+
 		public Script StartScript ()
 		{
-			return new MDRefactoringScript (this, this.Document, this.Document.GetFormattingOptions ());
+			return new MDRefactoringScript (this, formattingOptions);
 		}
 
-
-		static CSharpAstResolver CreateResolver (Document document)
+		public IDisposable CreateScript ()
 		{
-			var parsedDocument = document.ParsedDocument;
-			if (parsedDocument == null)
-				return null;
-
-			var unit       = parsedDocument.GetAst<SyntaxTree> ();
-			var parsedFile = parsedDocument.ParsedFile as CSharpUnresolvedFile;
-			
-			if (unit == null || parsedFile == null)
-				return null;
-
-			return new CSharpAstResolver (document.Compilation, unit, parsedFile);
+			return StartScript ();
 		}
 
-		public MDRefactoringContext (MonoDevelop.Ide.Gui.Document document, TextLocation loc, CancellationToken cancellationToken = default (CancellationToken)) : base (CreateResolver (document), cancellationToken)
+		internal static MDRefactoringContext Create (Document document, TextLocation loc, CancellationToken cancellationToken = default (CancellationToken)) 
+		{
+			var shared = document.GetSharedResolver ();
+			if (shared == null)
+				return null;
+			var sharedResolver = shared.Result;
+			if (sharedResolver == null)
+				return null;
+			return new MDRefactoringContext (document, sharedResolver, loc, cancellationToken);
+		}
+
+		internal MDRefactoringContext (Document document, CSharpAstResolver resolver, TextLocation loc, CancellationToken cancellationToken = default (CancellationToken)) : base (resolver, cancellationToken)
 		{
 			if (document == null)
 				throw new ArgumentNullException ("document");
-			this.Document = document;
-			this.location = RefactoringService.GetCorrectResolveLocation (document, loc);
-			var policy = Document.HasProject ? Document.Project.Policies.Get<NameConventionPolicy> () : MonoDevelop.Projects.Policies.PolicyService.GetDefaultPolicy<NameConventionPolicy> ();
+			this.document = document;
+			this.TextEditor = document.Editor;
+			this.ParsedDocument = document.ParsedDocument;
+			this.Project = document.Project as DotNetProject;
+			this.formattingOptions = document.GetFormattingOptions ();
+			this.location = loc;
+			var policy = document.HasProject ? Project.Policies.Get<NameConventionPolicy> () : MonoDevelop.Projects.Policies.PolicyService.GetDefaultPolicy<NameConventionPolicy> ();
 			Services.AddService (typeof(NamingConventionService), policy.CreateNRefactoryService ());
-
+			Services.AddService (typeof(ICSharpCode.NRefactory.CSharp.CodeGenerationService), new CSharpCodeGenerationService());
 		}
 
+		public MDRefactoringContext (DotNetProject project, TextEditorData data, ParsedDocument parsedDocument, CSharpAstResolver resolver, TextLocation loc, CancellationToken cancellationToken = default (CancellationToken)) : base (resolver, cancellationToken)
+		{
+			this.TextEditor = data;
+			this.ParsedDocument = parsedDocument;
+			this.Project = project;
+			var policy = Project.Policies.Get<CSharpFormattingPolicy> ();
+			this.formattingOptions = policy.CreateOptions ();
+			this.location = loc;
+			var namingPolicy = Project.Policies.Get<NameConventionPolicy> ();
+			Services.AddService (typeof(NamingConventionService), namingPolicy.CreateNRefactoryService ());
+		}
 	}
 }

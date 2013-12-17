@@ -147,10 +147,8 @@ namespace MonoDevelop.Ide.CodeTemplates
 				var baseTypeDef = baseType.GetDefinition();
 				if (baseTypeDef != null && baseTypeDef.Name == "IEnumerable") {
 					if (baseTypeDef.Namespace == "System.Collections.Generic" && baseTypeDef.TypeParameterCount == 1) {
-						var pt = baseType as ParameterizedType;
-						if (pt != null) {
-							return pt.TypeArguments[0];
-						}
+						if (baseType.TypeArguments.Count > 0)
+							return baseType.TypeArguments[0];
 					} else if (baseTypeDef.Namespace == "System.Collections" && baseTypeDef.TypeParameterCount == 0) {
 						return CurrentContext.Compilation.FindType (KnownTypeCode.Object);
 					}
@@ -255,19 +253,11 @@ namespace MonoDevelop.Ide.CodeTemplates
 				name = name.Substring (0, idx);
 			}
 
-			var type = new GetClassTypeReference (ns, name, 0).Resolve (
-				CurrentContext.Document.ParsedDocument.GetTypeResolveContext (
-				CurrentContext.Document.Compilation, 
-				CurrentContext.Document.Editor.Caret.Location
-				)
-			);
+			var type = new GetClassTypeReference (ns, name, 0).Resolve (new SimpleTypeResolveContext (CurrentContext.Document.Compilation.MainAssembly));
 			bool stripAttribute = false;
 			if (type == null || type.Kind == TypeKind.Unknown) {
 				type = new GetClassTypeReference (ns, name + "Attribute", 0).Resolve (
-					CurrentContext.Document.ParsedDocument.GetTypeResolveContext (
-					CurrentContext.Document.Compilation, 
-					CurrentContext.Document.Editor.Caret.Location
-					)
+					new SimpleTypeResolveContext (CurrentContext.Document.Compilation.MainAssembly)
 				);	
 				stripAttribute = true;
 			}

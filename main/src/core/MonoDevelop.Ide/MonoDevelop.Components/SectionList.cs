@@ -29,6 +29,7 @@ using System.Collections.Generic;
 using Gtk;
 using Gdk;
 using Cairo;
+using Mono.TextEditor;
 
 namespace MonoDevelop.Components
 {
@@ -295,7 +296,7 @@ namespace MonoDevelop.Components
 				cr.Translate (alloc.X + bw, alloc.Y + bw);
 				
 				var borderCol = Convert (Style.Dark (StateType.Normal));
-				cr.Color = borderCol;
+				cr.SetSourceColor (borderCol);
 				cr.Rectangle (halfLineWidth, halfLineWidth, w - borderLineWidth, h - borderLineWidth);
 				cr.LineWidth = borderLineWidth;
 				cr.Stroke ();
@@ -303,54 +304,57 @@ namespace MonoDevelop.Components
 				cr.Translate (borderLineWidth, borderLineWidth);
 				w = w - (2 * borderLineWidth);
 				
-				var unselectedGrad = new LinearGradient (0, 0, 0, headerHeight);
-				var unselectedCol = Convert (Style.Mid (StateType.Normal));
-				var unselectedTextCol = Convert (Style.Text (StateType.Normal));
-				unselectedCol.A = 0.6;
-				unselectedGrad.AddColorStop (0, unselectedCol);
-				unselectedCol.A = 1;
-				unselectedGrad.AddColorStop (1, unselectedCol);
-				
-				var hoverGrad = new LinearGradient (0, 0, 0, headerHeight);
-				var hoverCol = Convert (Style.Mid (StateType.Prelight));
-				var hoverTextCol = Convert (Style.Text (StateType.Prelight));
-				hoverCol.A = 0.6;
-				hoverGrad.AddColorStop (0, unselectedCol);
-				hoverCol.A = 1;
-				hoverGrad.AddColorStop (1, unselectedCol);
-				
-				var selectedGrad = new LinearGradient (0, 0, 0, headerHeight);
-				var selectedCol = Convert (Style.Mid (StateType.Normal));
-				var selectedTextCol = Convert (Style.Text (StateType.Normal));
-				selectedCol.A = 0.6;
-				selectedGrad.AddColorStop (0, selectedCol);
-				selectedCol.A = 1;
-				selectedGrad.AddColorStop (1, selectedCol);
-				
-				for (int i = 0; i < sections.Count; i++) {
-					var section = sections[i];
-					bool isActive = activeIndex == i;
-					bool isHover = hoverIndex == i;
+				using (LinearGradient unselectedGrad = new LinearGradient (0, 0, 0, headerHeight),
+				       hoverGrad = new LinearGradient (0, 0, 0, headerHeight),
+				       selectedGrad = new LinearGradient (0, 0, 0, headerHeight)
+				       )
+				{
+					var unselectedCol = Convert (Style.Mid (StateType.Normal));
+					var unselectedTextCol = Convert (Style.Text (StateType.Normal));
+					unselectedCol.A = 0.6;
+					unselectedGrad.AddColorStop (0, unselectedCol);
+					unselectedCol.A = 1;
+					unselectedGrad.AddColorStop (1, unselectedCol);
+
+					var hoverCol = Convert (Style.Mid (StateType.Prelight));
+					var hoverTextCol = Convert (Style.Text (StateType.Prelight));
+					hoverCol.A = 0.6;
+					hoverGrad.AddColorStop (0, unselectedCol);
+					hoverCol.A = 1;
+					hoverGrad.AddColorStop (1, unselectedCol);
+
+					var selectedCol = Convert (Style.Mid (StateType.Normal));
+					var selectedTextCol = Convert (Style.Text (StateType.Normal));
+					selectedCol.A = 0.6;
+					selectedGrad.AddColorStop (0, selectedCol);
+					selectedCol.A = 1;
+					selectedGrad.AddColorStop (1, selectedCol);
 					
-					cr.Rectangle (0, 0, w, headerHeight);
-					cr.Pattern = isActive? selectedGrad : (isHover? hoverGrad : unselectedGrad);
-					cr.Fill ();
-					
-					cr.Color = isActive? selectedTextCol : (isHover? hoverTextCol : unselectedTextCol);
-					layout.SetText (section.Title);
-					layout.Ellipsize = Pango.EllipsizeMode.End;
-					layout.Width = (int) ((w - headerPadding - headerPadding) * Pango.Scale.PangoScale);
-					cr.MoveTo (headerPadding, headerPadding);
-					PangoCairoHelper.ShowLayout (cr, layout);
-					
-					cr.MoveTo (-halfLineWidth, i > activeIndex? -halfLineWidth : headerHeight + halfLineWidth);
-					cr.RelLineTo (w + borderLineWidth, 0.0);
-					cr.Color = borderCol;
-					cr.Stroke ();
-					
-					cr.Translate (0, headerHeight + borderLineWidth);
-					if (isActive)
-						cr.Translate (0, section.Child.Allocation.Height + borderLineWidth);
+					for (int i = 0; i < sections.Count; i++) {
+						var section = sections[i];
+						bool isActive = activeIndex == i;
+						bool isHover = hoverIndex == i;
+						
+						cr.Rectangle (0, 0, w, headerHeight);
+						cr.SetSource (isActive? selectedGrad : (isHover? hoverGrad : unselectedGrad));
+						cr.Fill ();
+						
+						cr.SetSourceColor (isActive? selectedTextCol : (isHover? hoverTextCol : unselectedTextCol));
+						layout.SetText (section.Title);
+						layout.Ellipsize = Pango.EllipsizeMode.End;
+						layout.Width = (int) ((w - headerPadding - headerPadding) * Pango.Scale.PangoScale);
+						cr.MoveTo (headerPadding, headerPadding);
+						PangoCairoHelper.ShowLayout (cr, layout);
+						
+						cr.MoveTo (-halfLineWidth, i > activeIndex? -halfLineWidth : headerHeight + halfLineWidth);
+						cr.RelLineTo (w + borderLineWidth, 0.0);
+						cr.SetSourceColor (borderCol);
+						cr.Stroke ();
+						
+						cr.Translate (0, headerHeight + borderLineWidth);
+						if (isActive)
+							cr.Translate (0, section.Child.Allocation.Height + borderLineWidth);
+					}
 				}
 			}
 			

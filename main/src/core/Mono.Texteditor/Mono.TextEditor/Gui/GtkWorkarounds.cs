@@ -30,6 +30,7 @@ using System.Runtime.InteropServices;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Reflection.Emit;
+using Gtk;
 
 namespace Mono.TextEditor
 {
@@ -53,16 +54,43 @@ namespace Mono.TextEditor
 		static extern bool objc_msgSend_bool (IntPtr klass, IntPtr selector);
 		
 		[DllImport (LIBOBJC, EntryPoint = "objc_msgSend")]
-		static extern bool objc_msgSend_int_int (IntPtr klass, IntPtr selector, int arg);
+		static extern int objc_msgSend_NSInt32_NSInt32 (IntPtr klass, IntPtr selector, int arg);
+
+		[DllImport (LIBOBJC, EntryPoint = "objc_msgSend")]
+		static extern long objc_msgSend_NSInt64_NSInt64 (IntPtr klass, IntPtr selector, long arg);
 		
 		[DllImport (LIBOBJC, EntryPoint = "objc_msgSend")]
-		static extern int objc_msgSend_int (IntPtr klass, IntPtr selector);
+		static extern uint objc_msgSend_NSUInt32 (IntPtr klass, IntPtr selector);
+
+		[DllImport (LIBOBJC, EntryPoint = "objc_msgSend")]
+		static extern ulong objc_msgSend_NSUInt64 (IntPtr klass, IntPtr selector);
 		
 		[DllImport (LIBOBJC, EntryPoint = "objc_msgSend_stret")]
-		static extern void objc_msgSend_RectangleF (out RectangleF rect, IntPtr klass, IntPtr selector);
+		static extern void objc_msgSend_CGRect32 (out CGRect32 rect, IntPtr klass, IntPtr selector);
+
+		[DllImport (LIBOBJC, EntryPoint = "objc_msgSend_stret")]
+		static extern void objc_msgSend_CGRect64 (out CGRect64 rect, IntPtr klass, IntPtr selector);
 		
 		[DllImport ("libgtk-quartz-2.0.dylib")]
 		static extern IntPtr gdk_quartz_window_get_nswindow (IntPtr window);
+
+		struct CGRect32
+		{
+			public float X, Y, Width, Height;
+		}
+
+		struct CGRect64
+		{
+			public double X, Y, Width, Height;
+
+			public CGRect64 (CGRect32 rect32)
+			{
+				X = rect32.X;
+				Y = rect32.Y;
+				Width = rect32.Width;
+				Height = rect32.Height;
+			}
+		}
 
 		static IntPtr cls_NSScreen;
 		static IntPtr sel_screens, sel_objectEnumerator, sel_nextObject, sel_frame, sel_visibleFrame,
@@ -140,7 +168,6 @@ namespace Mono.TextEditor
 			IntPtr iter = objc_msgSend_IntPtr (array, sel_objectEnumerator);
 			Gdk.Rectangle ygeometry = screen.GetMonitorGeometry (monitor);
 			Gdk.Rectangle xgeometry = screen.GetMonitorGeometry (0);
-			RectangleF visible, frame;
 			IntPtr scrn;
 			int i = 0;
 			
@@ -149,9 +176,19 @@ namespace Mono.TextEditor
 			
 			if (scrn == IntPtr.Zero)
 				return screen.GetMonitorGeometry (monitor);
-			
-			objc_msgSend_RectangleF (out visible, scrn, sel_visibleFrame);
-			objc_msgSend_RectangleF (out frame, scrn, sel_frame);
+
+			CGRect64 visible, frame;
+
+			if (IntPtr.Size == 8) {
+				objc_msgSend_CGRect64 (out visible, scrn, sel_visibleFrame);
+				objc_msgSend_CGRect64 (out frame, scrn, sel_frame);
+			} else {
+				CGRect32 visible32, frame32;
+				objc_msgSend_CGRect32 (out visible32, scrn, sel_visibleFrame);
+				objc_msgSend_CGRect32 (out frame32, scrn, sel_frame);
+				visible = new CGRect64 (visible32);
+				frame = new CGRect64 (frame32);
+			}
 			
 			// Note: Frame and VisibleFrame rectangles are relative to monitor 0, but we need absolute
 			// coordinates.
@@ -164,11 +201,11 @@ namespace Mono.TextEditor
 			//
 			// We need to swap the Y offset with the menu height because our callers expect the Y offset
 			// to be from the top of the screen, not from the bottom of the screen.
-			float x, y, width, height;
+			double x, y, width, height;
 			
 			if (visible.Height < frame.Height) {
-				float dockHeight = visible.Y - frame.Y;
-				float menubarHeight = (frame.Height - visible.Height) - dockHeight;
+				double dockHeight = visible.Y - frame.Y;
+				double menubarHeight = (frame.Height - visible.Height) - dockHeight;
 				
 				height = frame.Height - menubarHeight - dockHeight;
 				y = ygeometry.Y + menubarHeight;
@@ -187,7 +224,11 @@ namespace Mono.TextEditor
 		static void MacRequestAttention (bool critical)
 		{
 			int kind = critical?  NSCriticalRequest : NSInformationalRequest;
-			objc_msgSend_int_int (sharedApp, sel_requestUserAttention, kind);
+			if (IntPtr.Size == 8) {
+				objc_msgSend_NSInt64_NSInt64 (sharedApp, sel_requestUserAttention, kind);
+			} else {
+				objc_msgSend_NSInt32_NSInt32 (sharedApp, sel_requestUserAttention, kind);
+			}
 		}
 
 		// Note: we can't reuse RectangleF because the layout is different...
@@ -328,7 +369,12 @@ namespace Mono.TextEditor
 		{
 			if (Platform.IsMac) {
 				Gdk.ModifierType mtype = Gdk.ModifierType.None;
-				int mod = objc_msgSend_int (cls_NSEvent, sel_modifierFlags);
+				ulong mod;
+				if (IntPtr.Size == 8) {
+					mod = objc_msgSend_NSUInt64 (cls_NSEvent, sel_modifierFlags);
+				} else {
+					mod = objc_msgSend_NSUInt32 (cls_NSEvent, sel_modifierFlags);
+				}
 				if ((mod & (1 << 17)) != 0)
 					mtype |= Gdk.ModifierType.ShiftMask;
 				if ((mod & (1 << 18)) != 0)
@@ -400,7 +446,8 @@ namespace Mono.TextEditor
 			if (parent != null) {
 				menu.AttachToWidget (parent, null);
 				menu.Hidden += (sender, e) => {
-					menu.Detach ();
+					if (menu.AttachWidget != null)
+						menu.Detach ();
 				};
 				posFunc = delegate (Gtk.Menu m, out int x, out int y, out bool pushIn) {
 					Gdk.Window window = evt != null? evt.Window : parent.GdkWindow;
@@ -502,7 +549,7 @@ namespace Mono.TextEditor
 		/// <summary>Map raw GTK key input to work around platform bugs and decompose accelerator keys</summary>
 		/// <param name='evt'>The raw key event</param>
 		/// <param name='key'>The composed key</param>
-		/// <param name='mod'>The composed modifiers</param>
+		/// <param name='state'>The composed modifiers</param>
 		/// <param name='shortcuts'>All the key/modifier decompositions that can be used as accelerators</param>
 		public static void MapKeys (Gdk.EventKey evt, out Gdk.Key key, out Gdk.ModifierType state,
 		                            out KeyboardShortcut[] shortcuts)
@@ -512,20 +559,24 @@ namespace Mono.TextEditor
 			unchecked {
 				id = (((ulong)(uint)evt.State) | (((ulong)evt.HardwareKeycode) << 32) | (((ulong)evt.Group) << 48));
 			}
-			
+
+			bool remapKey = Platform.IsWindows && evt.HardwareKeycode == 0;
 			MappedKeys mapped;
-			if (!mappedKeys.TryGetValue (id, out mapped))
+			if (remapKey || !mappedKeys.TryGetValue (id, out mapped))
 				mappedKeys[id] = mapped = MapKeys (evt);
 			
 			shortcuts = mapped.Shortcuts;
 			state = mapped.State;
 			key = mapped.Key;
+
+			if (remapKey) {
+				key = (Gdk.Key)evt.KeyValue;
+			}
 		}
 		
 		static MappedKeys MapKeys (Gdk.EventKey evt)
 		{
 			MappedKeys mapped;
-			ushort keycode = evt.HardwareKeycode;
 			Gdk.ModifierType modifier = evt.State;
 			byte grp = evt.Group;
 			
@@ -537,7 +588,7 @@ namespace Mono.TextEditor
 			uint keyval;
 			int effectiveGroup, level;
 			Gdk.ModifierType consumedModifiers;
-			TranslateKeyboardState (keycode, modifier, grp, out keyval, out effectiveGroup,
+			TranslateKeyboardState (evt, modifier, grp, out keyval, out effectiveGroup,
 				out level, out consumedModifiers);
 			mapped.Key = (Gdk.Key)keyval;
 			mapped.State = FixMacModifiers (evt.State & ~consumedModifiers, grp);
@@ -552,7 +603,7 @@ namespace Mono.TextEditor
 			modifier &= ~Gdk.ModifierType.LockMask;
 			
 			//fully decomposed
-			TranslateKeyboardState (evt.HardwareKeycode, Gdk.ModifierType.None, 0,
+			TranslateKeyboardState (evt, Gdk.ModifierType.None, 0,
 				out keyval, out effectiveGroup, out level, out consumedModifiers);
 			accelList.Add (new KeyboardShortcut ((Gdk.Key)keyval, FixMacModifiers (modifier, grp) & accelMods));
 			
@@ -560,6 +611,10 @@ namespace Mono.TextEditor
 			if ((modifier & Gdk.ModifierType.ShiftMask) != 0) {
 				keymap.TranslateKeyboardState (evt.HardwareKeycode, Gdk.ModifierType.ShiftMask, 0,
 					out keyval, out effectiveGroup, out level, out consumedModifiers);
+
+				if (Platform.IsWindows && evt.HardwareKeycode == 0) {
+					keyval = (ushort)evt.KeyValue;
+				}
 				
 				// Prevent consumption of non-Shift modifiers (that we didn't even provide!)
 				consumedModifiers &= Gdk.ModifierType.ShiftMask;
@@ -570,7 +625,7 @@ namespace Mono.TextEditor
 			
 			//with group 1 composed
 			if (grp == 1) {
-				TranslateKeyboardState (evt.HardwareKeycode, modifier & ~Gdk.ModifierType.ShiftMask, 1,
+				TranslateKeyboardState (evt, modifier & ~Gdk.ModifierType.ShiftMask, 1,
 					out keyval, out effectiveGroup, out level, out consumedModifiers);
 				
 				// Prevent consumption of Shift modifier (that we didn't even provide!)
@@ -582,7 +637,7 @@ namespace Mono.TextEditor
 			
 			//with group 1 and shift composed
 			if (grp == 1 && (modifier & Gdk.ModifierType.ShiftMask) != 0) {
-				TranslateKeyboardState (evt.HardwareKeycode, modifier, 1,
+				TranslateKeyboardState (evt, modifier, 1,
 					out keyval, out effectiveGroup, out level, out consumedModifiers);
 				var m = FixMacModifiers ((modifier & ~consumedModifiers), 0) & accelMods;
 				AddIfNotDuplicate (accelList, new KeyboardShortcut ((Gdk.Key)keyval, m));
@@ -597,9 +652,11 @@ namespace Mono.TextEditor
 		
 		// Workaround for bug "Bug 688247 - Ctrl+Alt key not work on windows7 with bootcamp on a Mac Book Pro"
 		// Ctrl+Alt should behave like right alt key - unfortunately TranslateKeyboardState doesn't handle it. 
-		static void TranslateKeyboardState (uint hardware_keycode, Gdk.ModifierType state, int group, out uint keyval,
+		static void TranslateKeyboardState (Gdk.EventKey evt, Gdk.ModifierType state, int group, out uint keyval,
 			out int effective_group, out int level, out Gdk.ModifierType consumed_modifiers)
 		{
+			uint hardware_keycode = evt.HardwareKeycode;
+
 			if (Platform.IsWindows) {
 				const Gdk.ModifierType ctrlAlt = Gdk.ModifierType.ControlMask | Gdk.ModifierType.Mod1Mask;
 				if ((state & ctrlAlt) == ctrlAlt) {
@@ -615,6 +672,10 @@ namespace Mono.TextEditor
 			
 			keymap.TranslateKeyboardState (hardware_keycode, state, group, out keyval, out effective_group,
 				out level, out consumed_modifiers);
+
+			if (Platform.IsWindows && hardware_keycode == 0) {
+				keyval = evt.KeyValue;
+			}
 		}
 		
 		static Gdk.ModifierType FixMacModifiers (Gdk.ModifierType mod, byte grp)
@@ -972,6 +1033,182 @@ namespace Mono.TextEditor
 			{
 				public string Url { get { return (string)base.Args [0]; } }
 			}
+		}
+
+		static bool canSetOverlayScrollbarPolicy = true;
+
+		[DllImport ("libgtk-quartz-2.0.dylib")]
+		static extern void gtk_scrolled_window_set_overlay_policy (IntPtr sw, Gtk.PolicyType hpolicy, Gtk.PolicyType vpolicy);
+
+		[DllImport ("libgtk-quartz-2.0.dylib")]
+		static extern void gtk_scrolled_window_get_overlay_policy (IntPtr sw, out Gtk.PolicyType hpolicy, out Gtk.PolicyType vpolicy);
+
+		public static void SetOverlayScrollbarPolicy (Gtk.ScrolledWindow sw, Gtk.PolicyType hpolicy, Gtk.PolicyType vpolicy)
+		{
+			if (!canSetOverlayScrollbarPolicy) {
+				return;
+			}
+			try {
+				gtk_scrolled_window_set_overlay_policy (sw.Handle, hpolicy, vpolicy);
+				return;
+			} catch (DllNotFoundException) {
+			} catch (EntryPointNotFoundException) {
+			}
+		}
+
+		public static void GetOverlayScrollbarPolicy (Gtk.ScrolledWindow sw, out Gtk.PolicyType hpolicy, out Gtk.PolicyType vpolicy)
+		{
+			if (!canSetOverlayScrollbarPolicy) {
+				hpolicy = vpolicy = 0;
+				return;
+			}
+			try {
+				gtk_scrolled_window_get_overlay_policy (sw.Handle, out hpolicy, out vpolicy);
+				return;
+			} catch (DllNotFoundException) {
+			} catch (EntryPointNotFoundException) {
+			}
+			hpolicy = vpolicy = 0;
+			canSetOverlayScrollbarPolicy = false;
+		}
+
+		[DllImport ("libgtk-win32-2.0-0.dll", CallingConvention = CallingConvention.Cdecl)]
+		static extern bool gtk_tree_view_get_tooltip_context (IntPtr raw, ref int x, ref int y, bool keyboard_tip, out IntPtr model, out IntPtr path, IntPtr iter);
+
+		//the GTK# version of this has 'out' instead of 'ref', preventing passing the x,y values in
+		public static bool GetTooltipContext (this TreeView tree, ref int x, ref int y, bool keyboardTip,
+			 out TreeModel model, out TreePath path, out Gtk.TreeIter iter)
+		{
+			IntPtr intPtr = Marshal.AllocHGlobal (Marshal.SizeOf (typeof(TreeIter)));
+			IntPtr handle;
+			IntPtr intPtr2;
+			bool result = gtk_tree_view_get_tooltip_context (tree.Handle, ref x, ref y, keyboardTip, out handle, out intPtr2, intPtr);
+			model = TreeModelAdapter.GetObject (handle, false);
+			path = intPtr2 == IntPtr.Zero ? null : ((TreePath)GLib.Opaque.GetOpaque (intPtr2, typeof(TreePath), false));
+			iter = TreeIter.New (intPtr);
+			Marshal.FreeHGlobal (intPtr);
+			return result;
+		}
+		
+		static bool supportsHiResIcons = false; // Disabled for now
+
+		[DllImport ("libgtk-quartz-2.0.dylib")]
+		static extern void gtk_icon_source_set_scale (IntPtr source, double scale);
+		
+		[DllImport ("libgtk-quartz-2.0.dylib")]
+		static extern void gtk_icon_source_set_scale_wildcarded (IntPtr source, bool setting);
+		
+		[DllImport (PangoUtil.LIBGTK)]
+		static extern double gtk_widget_get_scale_factor (IntPtr widget);
+		
+		[DllImport (PangoUtil.LIBGDK)]
+		static extern double gdk_screen_get_monitor_scale_factor (IntPtr widget, int monitor);
+
+		[DllImport (PangoUtil.LIBGOBJECT)]
+		static extern IntPtr g_object_get_data (IntPtr source, string name);
+		
+		[DllImport (PangoUtil.LIBGTK)]
+		static extern IntPtr gtk_icon_set_render_icon_scaled (IntPtr handle, IntPtr style, int direction, int state, int size, IntPtr widget, IntPtr intPtr, ref double scale);
+
+		public static bool SetSourceScale (Gtk.IconSource source, double scale)
+		{
+			if (!supportsHiResIcons)
+				return false;
+
+			try {
+				gtk_icon_source_set_scale (source.Handle, scale);
+				return true;
+			} catch (DllNotFoundException) {
+			} catch (EntryPointNotFoundException) {
+			}
+			supportsHiResIcons = false;
+			return false;
+		}
+		
+		public static bool SetSourceScaleWildcarded (Gtk.IconSource source, bool setting)
+		{
+			if (!supportsHiResIcons)
+				return false;
+
+			try {
+				gtk_icon_source_set_scale_wildcarded (source.Handle, setting);
+				return true;
+			} catch (DllNotFoundException) {
+			} catch (EntryPointNotFoundException) {
+			}
+			supportsHiResIcons = false;
+			return false;
+		}
+
+		public static Gdk.Pixbuf Get2xVariant (Gdk.Pixbuf px)
+		{
+			if (!supportsHiResIcons)
+				return null;
+
+			try {
+				IntPtr res = g_object_get_data (px.Handle, "gdk-pixbuf-2x-variant");
+				if (res != IntPtr.Zero && res != px.Handle)
+					return (Gdk.Pixbuf) GLib.Object.GetObject (res);
+				else
+					return null;
+			} catch (DllNotFoundException) {
+			} catch (EntryPointNotFoundException) {
+			}
+			supportsHiResIcons = false;
+			return null;
+		}
+
+		public static void Set2xVariant (Gdk.Pixbuf px, Gdk.Pixbuf variant2x)
+		{
+		}
+		
+		public static double GetScaleFactor (Gtk.Widget w)
+		{
+			if (!supportsHiResIcons)
+				return 1;
+
+			try {
+				return gtk_widget_get_scale_factor (w.Handle);
+			} catch (DllNotFoundException) {
+			} catch (EntryPointNotFoundException) {
+			}
+			supportsHiResIcons = false;
+			return 1;
+		}
+		
+		public static double GetScaleFactor (this Gdk.Screen screen, int monitor)
+		{
+			if (!supportsHiResIcons)
+				return 1;
+
+			try {
+				return gdk_screen_get_monitor_scale_factor (screen.Handle, monitor);
+			} catch (DllNotFoundException) {
+			} catch (EntryPointNotFoundException) {
+			}
+			supportsHiResIcons = false;
+			return 1;
+		}
+		
+		public static Gdk.Pixbuf RenderIcon (this Gtk.IconSet iconset, Gtk.Style style, Gtk.TextDirection direction, Gtk.StateType state, Gtk.IconSize size, Gtk.Widget widget, string detail, double scale)
+		{
+			if (scale == 1d)
+				return iconset.RenderIcon (style, direction, state, size, widget, detail);
+
+			if (!supportsHiResIcons)
+				return null;
+
+			try {
+				IntPtr intPtr = GLib.Marshaller.StringToPtrGStrdup (detail);
+				IntPtr o = gtk_icon_set_render_icon_scaled (iconset.Handle, (style != null) ? style.Handle : IntPtr.Zero, (int)direction, (int)state, (int)size, (widget != null) ? widget.Handle : IntPtr.Zero, intPtr, ref scale);
+				Gdk.Pixbuf result = (Gdk.Pixbuf) GLib.Object.GetObject (o);
+				GLib.Marshaller.Free (intPtr);
+				return result;
+			} catch (DllNotFoundException) {
+			} catch (EntryPointNotFoundException) {
+			}
+			supportsHiResIcons = false;
+			return null;
 		}
 	}
 	

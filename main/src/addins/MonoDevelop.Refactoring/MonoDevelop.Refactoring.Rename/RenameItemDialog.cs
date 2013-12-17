@@ -34,6 +34,7 @@ using MonoDevelop.Ide;
 using MonoDevelop.Ide.ProgressMonitoring;
 using ICSharpCode.NRefactory.CSharp.Refactoring;
 using ICSharpCode.NRefactory.TypeSystem;
+using System.Linq;
 
 namespace MonoDevelop.Refactoring.Rename
 {
@@ -50,6 +51,8 @@ namespace MonoDevelop.Refactoring.Rename
 				options.SelectedItem = ((IMethod)options.SelectedItem).DeclaringType;
 			}
 			this.Build ();
+			includeOverloadsCheckbox.Active = true;
+			includeOverloadsCheckbox.Visible = false;
 			if (options.SelectedItem is IType) {
 
 				var t = (IType)options.SelectedItem;
@@ -62,11 +65,7 @@ namespace MonoDevelop.Refactoring.Rename
 					if (typeDefinition.DeclaringType == null) {
 						// not supported for inner types
 						this.renameFileFlag.Visible = true;
-						this.renameFileFlag.Active = true;
-						// if more than one type is in the file, only rename the file as defilt if the file name contains the type name
-						// see Bug 603938 - Renaming a Class in a file with multiple classes renames the file
-						if (options.Document != null && options.Document.ParsedDocument.TopLevelTypeDefinitions.Count > 1) 
-							this.renameFileFlag.Active = options.Document.FileName.FileNameWithoutExtension.Contains (typeDefinition.Name);
+						this.renameFileFlag.Active = options.Document != null ? options.Document.FileName.FileNameWithoutExtension.Contains (typeDefinition.Name) : false;
 					} else {
 						this.renameFileFlag.Active = false;
 					}
@@ -92,6 +91,7 @@ namespace MonoDevelop.Refactoring.Rename
 					this.Title = GettextCatalog.GetString ("Rename Class");
 				} else {
 					this.Title = GettextCatalog.GetString ("Rename Method");
+					includeOverloadsCheckbox.Visible = m.DeclaringType.GetMethods (x => x.Name == m.Name).Count () > 1;
 				}
 			} else if (options.SelectedItem is IParameter) {
 				this.Title = GettextCatalog.GetString ("Rename Parameter");
@@ -99,13 +99,15 @@ namespace MonoDevelop.Refactoring.Rename
 				this.Title = GettextCatalog.GetString ("Rename Variable");
 			} else if (options.SelectedItem is ITypeParameter) {
 				this.Title = GettextCatalog.GetString ("Rename Type Parameter");
+			}  else if (options.SelectedItem is INamespace) {
+				this.Title = GettextCatalog.GetString ("Rename namespace");
 			} else {
 				this.Title = GettextCatalog.GetString ("Rename Item");
 			}
 			
 			if (options.SelectedItem is IEntity) {
 				var member = (IEntity)options.SelectedItem;
-				if (member.EntityType == EntityType.Constructor || member.EntityType == EntityType.Destructor) {
+				if (member.SymbolKind == SymbolKind.Constructor || member.SymbolKind == SymbolKind.Destructor) {
 					entry.Text = member.DeclaringType.Name;
 				} else {
 					entry.Text = member.Name;
@@ -118,6 +120,10 @@ namespace MonoDevelop.Refactoring.Rename
 			} else if (options.SelectedItem is IVariable) {
 				var lvar = (IVariable)options.SelectedItem;
 				entry.Text = lvar.Name;
+				//				this.fileName = lvar.Region.FileName;
+			} else if (options.SelectedItem is INamespace) {
+				var lvar = (INamespace)options.SelectedItem;
+				entry.Text = lvar.FullName;
 				//				this.fileName = lvar.Region.FileName;
 			}
 			entry.SelectRegion (0, -1);
@@ -166,7 +172,8 @@ namespace MonoDevelop.Refactoring.Rename
 			get {
 				return new RenameRefactoring.RenameProperties () {
 					NewName = entry.Text,
-					RenameFile = renameFileFlag.Visible && renameFileFlag.Active
+					RenameFile = renameFileFlag.Visible && renameFileFlag.Active,
+					IncludeOverloads = includeOverloadsCheckbox.Visible && includeOverloadsCheckbox.Active
 				};
 			}
 		}

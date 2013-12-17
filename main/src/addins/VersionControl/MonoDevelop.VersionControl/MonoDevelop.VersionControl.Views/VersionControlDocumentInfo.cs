@@ -25,15 +25,10 @@
 // THE SOFTWARE.
 
 using System;
-using System.Linq;
-using System.IO;
 using MonoDevelop.Ide;
 using MonoDevelop.Ide.Gui;
-using System.Collections.Generic;
 using System.Threading;
 using MonoDevelop.Core;
-using MonoDevelop.Ide.Gui.Content;
-using Mono.Addins;
 
 namespace MonoDevelop.VersionControl.Views
 {
@@ -77,16 +72,16 @@ namespace MonoDevelop.VersionControl.Views
 			this.Repository = repository;
 		}
 
-		public void Start ()
+		public void Start (bool rerun = false)
 		{
-			if (alreadyStarted)
+			if (!rerun && alreadyStarted)
 				return;
 			alreadyStarted = true;
 			ThreadPool.QueueUserWorkItem (delegate {
 				lock (updateLock) {
 					try {
 						History      = Item.Repository.GetHistory (Item.Path, null);
-						VersionInfo  = Item.Repository.GetVersionInfo (Item.Path);
+						VersionInfo  = Item.Repository.GetVersionInfo (Item.Path, VersionInfoQueryFlags.IgnoreCache);
 					} catch (Exception ex) {
 						LoggingService.LogError ("Error retrieving history", ex);
 					}

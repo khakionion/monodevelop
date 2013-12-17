@@ -1,6 +1,10 @@
 include main/monodevelop_version
 
 EXTRA_DIST = configure
+SPACE := 
+SPACE +=  
+AOT_DIRECTORIES:=$(subst $(SPACE),:,$(shell find main/build/* -type d))
+MONO_AOT:=MONO_PATH=$(AOT_DIRECTORIES):$(MONO_PATH) mono --aot --debug
 
 all: update_submodules all-recursive
 
@@ -77,8 +81,17 @@ dist: update_submodules remove-stale-tarballs dist-recursive
 	@cd tarballs && tar -cjf monodevelop-$(PACKAGE_VERSION).tar.bz2 monodevelop-$(PACKAGE_VERSION)
 	@cd tarballs && rm -rf monodevelop-$(PACKAGE_VERSION)
 
+aot:
+	@for i in main/build/bin/*.dll; do ($(MONO_AOT) $$i &> /dev/null && echo AOT successful: $$i) || (echo AOT failed: $$i); done
+	@for i in main/build/AddIns/*.dll; do ($(MONO_AOT) $$i &> /dev/null && echo AOT successful: $$i) || (echo AOT failed: $$i); done
+	@for i in main/build/AddIns/*/*.dll; do ($(MONO_AOT) $$i &> /dev/null && echo AOT successful: $$i) || (echo AOT failed: $$i); done
+	@for i in main/build/AddIns/*/*/*.dll; do ($(MONO_AOT) $$i &> /dev/null && echo AOT successful: $$i) || (echo AOT failed: $$i); done
+
 run:
 	cd main && $(MAKE) runmd
+
+run-boehm:
+	cd main && $(MAKE) run-boehm
 
 run-sgen:
 	cd main && $(MAKE) run-sgen

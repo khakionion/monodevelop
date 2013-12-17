@@ -93,8 +93,9 @@ namespace CBinding
 		private void Init ()
 		{
 			packages.Project = this;
-			
-			IdeApp.Workspace.ItemAddedToSolution += OnEntryAddedToCombine;
+
+			if (IdeApp.IsInitialized)
+				IdeApp.Workspace.ItemAddedToSolution += OnEntryAddedToCombine;
 		}
 		
 		public CProject ()
@@ -202,6 +203,9 @@ namespace CBinding
 		
 		public override IEnumerable<SolutionItem> GetReferencedItems (ConfigurationSelector configuration)
 		{
+			foreach (var p in base.GetReferencedItems (configuration))
+				yield return p;
+
 			List<string> project_names = new List<string> ();
 			
 			foreach (Package p in Packages) {

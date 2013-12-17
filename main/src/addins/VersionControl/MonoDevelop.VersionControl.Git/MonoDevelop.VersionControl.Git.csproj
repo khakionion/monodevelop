@@ -20,14 +20,19 @@
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
     <ConsolePause>false</ConsolePause>
+    <GenerateDocumentation>true</GenerateDocumentation>
+    <NoWarn>1591;1573</NoWarn>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-    <DebugType>none</DebugType>
-    <Optimize>false</Optimize>
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
     <OutputPath>..\..\..\..\build\AddIns\VersionControl</OutputPath>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
     <ConsolePause>false</ConsolePause>
+    <DebugSymbols>true</DebugSymbols>
+    <GenerateDocumentation>true</GenerateDocumentation>
+    <NoWarn>1591;1573</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System" />
@@ -86,6 +91,10 @@
     <Compile Include="MonoDevelop.VersionControl.Git\GitCommitDialogExtension.cs" />
     <Compile Include="MonoDevelop.VersionControl.Git\GitSupportFeature.cs" />
     <Compile Include="MonoDevelop.VersionControl.Git\FilteredStatus.cs" />
+    <Compile Include="MonoDevelop.VersionControl.Git\UserGitConfigDialog.cs" />
+    <Compile Include="gtk-gui\MonoDevelop.VersionControl.Git.UserGitConfigDialog.cs" />
+    <Compile Include="MonoDevelop.VersionControl.Git\MyersDiff.cs" />
+    <Compile Include="MonoDevelop.VersionControl.Git\GitSelectRevisionDialog.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\core\Mono.Texteditor\Mono.TextEditor.csproj">
@@ -139,6 +148,11 @@
     <ProjectReference Include="..\..\MonoDevelop.DesignerSupport\MonoDevelop.DesignerSupport.csproj">
       <Project>{2C24D515-4A2C-445C-8419-C09231913CFA}</Project>
       <Name>MonoDevelop.DesignerSupport</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\..\external\xwt\Xwt\Xwt.csproj">
+      <Project>{92494904-35FA-4DC9-BDE9-3A3E87AC49D3}</Project>
+      <Name>Xwt</Name>
+      <Private>False</Private>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>

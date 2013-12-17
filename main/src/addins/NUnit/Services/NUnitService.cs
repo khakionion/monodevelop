@@ -100,7 +100,9 @@ namespace MonoDevelop.NUnit
 		
 		public IAsyncOperation RunTest (UnitTest test, IExecutionHandler context)
 		{
-			return RunTest (test, context, IdeApp.Preferences.BuildBeforeExecuting);
+			var result = RunTest (test, context, IdeApp.Preferences.BuildBeforeRunningTests);
+			result.Completed += (OperationHandler) DispatchService.GuiDispatch (new OperationHandler (OnTestSessionCompleted));
+			return result;
 		}
 		
 		public IAsyncOperation RunTest (UnitTest test, IExecutionHandler context, bool buildOwnerObject)
@@ -187,6 +189,17 @@ namespace MonoDevelop.NUnit
 			}
 			return null;
 		}
+
+		public UnitTest SearchTestById (string id)
+		{
+			foreach (UnitTest t in RootTests) {
+				UnitTest r = SearchTestById (t, id);
+				if (r != null)
+					return r;
+			}
+			return null;
+		}
+
 		
 		UnitTest SearchTest (UnitTest test, string fullName)
 		{
@@ -194,7 +207,7 @@ namespace MonoDevelop.NUnit
 				return null;
 			if (test.FullName == fullName)
 				return test;
-			
+
 			UnitTestGroup group = test as UnitTestGroup;
 			if (group != null)  {
 				foreach (UnitTest t in group.Tests) {
@@ -205,7 +218,25 @@ namespace MonoDevelop.NUnit
 			}
 			return null;
 		}
-		
+
+		UnitTest SearchTestById (UnitTest test, string id)
+		{
+			if (test == null)
+				return null;
+			if (test.TestId == id)
+				return test;
+
+			UnitTestGroup group = test as UnitTestGroup;
+			if (group != null)  {
+				foreach (UnitTest t in group.Tests) {
+					UnitTest result = SearchTestById (t, id);
+					if (result != null)
+						return result;
+				}
+			}
+			return null;
+		}
+
 		public UnitTest FindRootTest (IWorkspaceObject item)
 		{
 			return FindRootTest (RootTests, item);
@@ -252,8 +283,12 @@ namespace MonoDevelop.NUnit
 		public UnitTest BuildTest (IWorkspaceObject entry)
 		{
 			foreach (ITestProvider p in providers) {
-				UnitTest t = p.CreateUnitTest (entry);
-				if (t != null) return t;
+				try {
+					UnitTest t = p.CreateUnitTest (entry);
+					if (t != null)
+						return t;
+				} catch {
+				}
 			}
 			return null;
 		}
@@ -274,11 +309,33 @@ namespace MonoDevelop.NUnit
 			if (TestSuiteChanged != null)
 				TestSuiteChanged (this, EventArgs.Empty);
 		}
-		
+
+		public static void ResetResult (UnitTest test)
+		{
+			if (test == null)
+				return;
+			test.ResetLastResult ();
+			UnitTestGroup group = test as UnitTestGroup;
+			if (group == null) 
+				return;
+			foreach (UnitTest t in new List<UnitTest> (group.Tests))
+				ResetResult (t);
+		}
+
 		public event EventHandler TestSuiteChanged;
+
+		void OnTestSessionCompleted (IAsyncOperation op)
+		{
+			var handler = TestSessionCompleted;
+			if (handler != null)
+				handler (this, EventArgs.Empty);
+		}
+
+		public event EventHandler TestSessionCompleted;
 	}
 	
-	
+
+
 	class TestSession: IAsyncOperation, ITestProgressMonitor
 	{
 		UnitTest test;
@@ -287,12 +344,15 @@ namespace MonoDevelop.NUnit
 		bool success;
 		ManualResetEvent waitEvent;
 		IExecutionHandler context;
-		
+		TestResultsPad resultsPad;
+
 		public TestSession (UnitTest test, IExecutionHandler context, TestResultsPad resultsPad)
 		{
 			this.test = test;
 			this.context = context;
 			this.monitor = new TestMonitor (resultsPad);
+			this.resultsPad = resultsPad;
+			resultsPad.InitializeTestRun (test);
 		}
 		
 		public void Start ()
@@ -306,9 +366,9 @@ namespace MonoDevelop.NUnit
 		void RunTests ()
 		{
 			try {
-				ResetResult (test);
-				monitor.InitializeTestRun (test);
-				TestContext ctx = new TestContext (monitor, context, DateTime.Now);
+				NUnitService.ResetResult (test);
+
+				TestContext ctx = new TestContext (monitor, resultsPad, context, DateTime.Now);
 				test.Run (ctx);
 				test.SaveResults ();
 				success = true;
@@ -328,18 +388,6 @@ namespace MonoDevelop.NUnit
 				Completed (this);
 		}
 		
-		public static void ResetResult (UnitTest test)
-		{
-			if (test == null)
-				return;
-			test.ResetLastResult ();
-			UnitTestGroup group = test as UnitTestGroup;
-			if (group == null) 
-				return;
-			foreach (UnitTest t in new List<UnitTest> (group.Tests))
-				ResetResult (t);
-		}
-		
 		void ITestProgressMonitor.BeginTest (UnitTest test)
 		{
 			monitor.BeginTest (test);
@@ -355,6 +403,11 @@ namespace MonoDevelop.NUnit
 			monitor.ReportRuntimeError (message, exception);
 		}
 		
+		void ITestProgressMonitor.WriteGlobalLog (string message)
+		{
+			monitor.WriteGlobalLog (message);
+		}
+
 		bool ITestProgressMonitor.IsCancelRequested {
 			get { return monitor.IsCancelRequested; }
 		}

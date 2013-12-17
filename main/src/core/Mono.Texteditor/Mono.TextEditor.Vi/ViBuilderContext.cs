@@ -105,8 +105,10 @@ namespace Mono.TextEditor.Vi
 						}
 						caret.PreserveSelection = true;
 						caret.Column += length - 1;
-						data.MainSelection.Lead = new DocumentLocation (data.MainSelection.Lead.Line, caret.Column + 1);
-						data.MainSelection.Anchor = new DocumentLocation (data.MainSelection.Anchor.Line, caret.Column + 1);
+						data.MainSelection = data.MainSelection.WithRange (
+							new DocumentLocation (data.MainSelection.Anchor.Line, caret.Column + 1),
+							new DocumentLocation (data.MainSelection.Lead.Line, caret.Column + 1)
+						);
 						doc.CommitMultipleLineUpdate (data.MainSelection.MinLine, data.MainSelection.MaxLine);
 					} else {
 						int length = data.Insert (caret.Offset, text);
@@ -195,7 +197,7 @@ namespace Mono.TextEditor.Vi
 				{ 'o', FoldActions.OpenFold },
 			}},
 			{ 'g', new ViCommandMap () {
-				{ 'g', CaretMoveActions.ToDocumentStart },
+				{ 'g', GotoLine, true },
 			}},
 			{ 'r', ViBuilders.ReplaceChar },
 			{ '~', ViActions.ToggleCase },
@@ -308,6 +310,13 @@ namespace Mono.TextEditor.Vi
 			ctx.RunAction ((ViEditor e) => ViActions.Up (e.Data));
 			return Open (ctx);
 		}
+
+		static bool GotoLine (ViBuilderContext ctx)
+    {
+      ctx.RunAction ((ViEditor e) => ViEditorActions.CaretToLineNumber (ctx.Multiplier, e));
+      ctx.RunAction ((ViEditor e) => CaretMoveActions.LineFirstNonWhitespace (e.Data));
+      return true;
+    }
 	}
 }
 

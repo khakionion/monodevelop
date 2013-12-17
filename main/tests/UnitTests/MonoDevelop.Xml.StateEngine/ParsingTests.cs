@@ -32,6 +32,7 @@ using MonoDevelop.Ide.Gui.Content;
 using System.Linq;
 
 using NUnit.Framework;
+using ICSharpCode.NRefactory.TypeSystem;
 
 
 namespace MonoDevelop.Xml.StateEngine
@@ -58,7 +59,7 @@ namespace MonoDevelop.Xml.StateEngine
 </doc>
 ",
 				delegate {
-					parser.AssertStateIs<XmlDoubleQuotedAttributeValueState> ();
+					parser.AssertStateIs<XmlAttributeValueState> ();
 					parser.AssertPath ("//doc/tag.a/tag.b/@id");
 				}
 			);
@@ -84,26 +85,26 @@ namespace MonoDevelop.Xml.StateEngine
 			parser.AssertErrorCount (0);
 		}
 		
-		[Test, Ignore ("Not working")]
+		[Test]
 		public void AttributeRecovery ()
 		{
 			TestParser parser = new TestParser (CreateRootState ());
 			parser.Parse (@"
 <doc>
 	<tag.a>
-		<tag.b arg='fff' sdd = sdsds= 'foo' ff $ />
+		<tag.b arg='fff' sdd = sdsds= 'foo' ff = 5 $ />
 	</tag.a>
 <a><b valid/></a>
 </doc>
 ",
 				delegate {
 					parser.AssertStateIs<XmlTagState> ();
-					parser.AssertAttributes ("arg", "fff", "sdd", "", "sdsds", "foo", "ff", "");
-					parser.AssertErrorCount (1);
+					parser.AssertAttributes ("arg", "fff", "sdd", "sdsds", "ff", "5");
+					parser.AssertErrorCount (3);
 				}
 			);
 			parser.AssertEmpty ();
-			parser.AssertErrorCount (1);
+			parser.AssertErrorCount (4);
 		}
 		
 		[Test]
@@ -126,14 +127,13 @@ namespace MonoDevelop.Xml.StateEngine
 </doc>
 ",
 				delegate {
-					parser.AssertStateIs<XmlSingleQuotedAttributeValueState> ();
+					parser.AssertStateIs<XmlAttributeValueState> ();
 					parser.AssertNodeDepth (9);
 					parser.AssertPath ("//doc/tag.a/tag.b/tag.c/tag.d/tag.e/tag.f/@id");
 				}
 			);
 			parser.AssertEmpty ();
-			parser.AssertErrorCount (3, x => x.ErrorType == ErrorType.Error);
-			parser.AssertErrorCount (2, x => x.ErrorType == ErrorType.Warning);
+			parser.AssertErrorCount (5, x => x.ErrorType == ErrorType.Error);
 		}
 		
 		[Test]
@@ -212,10 +212,30 @@ namespace MonoDevelop.Xml.StateEngine
 			Assert.AreEqual ("html", dt.RootElement.FullName);
 			Assert.AreEqual ("-//W3C//DTD XHTML 1.0 Strict//EN", dt.PublicFpi);
 			Assert.AreEqual ("DTD/xhtml1-strict.dtd", dt.Uri);
-			Assert.AreEqual (dt.InternalDeclarationRegion.Start.Line, 4);
+			Assert.AreEqual (dt.InternalDeclarationRegion.Begin.Line, 4);
 			Assert.AreEqual (dt.InternalDeclarationRegion.End.Line, 7);
 			parser.AssertNoErrors ();
 		}
+
+		[Test]
+		public void NamespacedAttributes ()
+		{
+			var parser = new TestParser (CreateRootState (), true);
+			parser.Parse (@"<tag foo:bar='1' foo:bar:baz='2' foo='3' />");
+			parser.AssertEmpty ();
+			var doc = (XDocument) parser.Nodes.Peek ();
+			var el = (XElement) doc.FirstChild;
+			Assert.AreEqual (3, el.Attributes.Count ());
+			Assert.AreEqual ("foo", el.Attributes.ElementAt (0).Name.Prefix);
+			Assert.AreEqual ("bar", el.Attributes.ElementAt (0).Name.Name);
+			Assert.AreEqual ("foo", el.Attributes.ElementAt (1).Name.Prefix);
+			Assert.AreEqual ("bar:baz", el.Attributes.ElementAt (1).Name.Name);
+			Assert.IsNull (el.Attributes.ElementAt (2).Name.Prefix);
+			Assert.AreEqual ("foo", el.Attributes.ElementAt (2).Name.Name);
+			Assert.AreEqual (3, el.Attributes.Count ());
+			parser.AssertErrorCount (1);
+			Assert.AreEqual (1, parser.Errors [0].Region.BeginLine);
+			Assert.AreEqual (25, parser.Errors [0].Region.BeginColumn);
+		}
 	}
-	
 }

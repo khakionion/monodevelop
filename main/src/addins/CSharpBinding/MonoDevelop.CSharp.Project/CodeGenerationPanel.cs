@@ -35,12 +35,17 @@ namespace MonoDevelop.CSharp.Project
 {
 	partial class CodeGenerationPanelWidget : Gtk.Bin 
 	{
+		const int DEBUG_FULL = 0;
+		const int DEBUG_PDB_ONLY = 1;
+		const int DEBUG_NONE = 2;
+
 		DotNetProjectConfiguration configuration;
 		CSharpCompilerParameters compilerParameters = null;
 		
 		public CodeGenerationPanelWidget ()
 		{
 			Build ();
+			xmlDocsEntry.DisplayAsRelativePath = true;
 		}
 		
 		public void Load (DotNetProjectConfiguration configuration)
@@ -49,8 +54,7 @@ namespace MonoDevelop.CSharp.Project
 			compilerParameters = (CSharpCompilerParameters) configuration.CompilationParameters;
 			
 			symbolsEntry.Text                          = compilerParameters.DefineSymbols;
-			generateDebugInformationCheckButton.Active = configuration.DebugMode;
-			generateXmlOutputCheckButton.Active        = compilerParameters.GenerateXmlDocumentation;
+			generateXmlOutputCheckButton.Active        = !string.IsNullOrEmpty (compilerParameters.DocumentationFile);
 			enableOptimizationCheckButton.Active       = compilerParameters.Optimize;
 			generateOverflowChecksCheckButton.Active   = compilerParameters.GenerateOverflowChecks;
 			warningsAsErrorsCheckButton.Active         = compilerParameters.TreatWarningsAsErrors;
@@ -60,6 +64,20 @@ namespace MonoDevelop.CSharp.Project
 			
 			int i = CSharpLanguageBinding.SupportedPlatforms.IndexOf (compilerParameters.PlatformTarget);
 			comboPlatforms.Active = i != -1 ? i : 0;
+
+			if (!configuration.DebugMode || string.Equals ("none", compilerParameters.DebugType, StringComparison.OrdinalIgnoreCase)) {
+				comboDebug.Active = DEBUG_NONE;
+			} else if (string.Equals ("pdbonly", compilerParameters.DebugType, StringComparison.OrdinalIgnoreCase)) {
+				comboDebug.Active = DEBUG_PDB_ONLY;
+			} else {
+				comboDebug.Active = DEBUG_FULL;
+			}
+
+			xmlDocsEntry.DefaultPath = configuration.OutputDirectory;
+
+			xmlDocsEntry.Path = string.IsNullOrEmpty (compilerParameters.DocumentationFile)
+				? configuration.CompiledOutputName.ChangeExtension (".xml")
+				: compilerParameters.DocumentationFile;
 		}
 
 		public void Store ()
@@ -67,20 +85,38 @@ namespace MonoDevelop.CSharp.Project
 			if (compilerParameters == null)
 				throw new ApplicationException ("Code generation panel wasn't loaded !");
 			
-			compilerParameters.DefineSymbols            = symbolsEntry.Text;
-			configuration.DebugMode                     = generateDebugInformationCheckButton.Active;
-			compilerParameters.GenerateXmlDocumentation = generateXmlOutputCheckButton.Active;
-			compilerParameters.Optimize                 = enableOptimizationCheckButton.Active;
-			compilerParameters.GenerateOverflowChecks   = generateOverflowChecksCheckButton.Active;
-			compilerParameters.TreatWarningsAsErrors    = warningsAsErrorsCheckButton.Active;
-			compilerParameters.WarningLevel             = warningLevelSpinButton.ValueAsInt;
-			compilerParameters.AdditionalArguments      = additionalArgsEntry.Text;
-			compilerParameters.NoWarnings               = ignoreWarningsEntry.Text;
-			compilerParameters.PlatformTarget           = CSharpLanguageBinding.SupportedPlatforms [comboPlatforms.Active];
+			compilerParameters.DefineSymbols          = symbolsEntry.Text;
+			compilerParameters.DocumentationFile      = generateXmlOutputCheckButton.Active? xmlDocsEntry.Path : null;
+			compilerParameters.Optimize               = enableOptimizationCheckButton.Active;
+			compilerParameters.GenerateOverflowChecks = generateOverflowChecksCheckButton.Active;
+			compilerParameters.TreatWarningsAsErrors  = warningsAsErrorsCheckButton.Active;
+			compilerParameters.WarningLevel           = warningLevelSpinButton.ValueAsInt;
+			compilerParameters.AdditionalArguments    = additionalArgsEntry.Text;
+			compilerParameters.NoWarnings             = ignoreWarningsEntry.Text;
+			compilerParameters.PlatformTarget         = CSharpLanguageBinding.SupportedPlatforms [comboPlatforms.Active];
+
+			switch (comboDebug.Active) {
+			case DEBUG_FULL:
+				configuration.DebugMode = true;
+				if (!string.Equals (compilerParameters.DebugType, "full", StringComparison.OrdinalIgnoreCase)) {
+					compilerParameters.DebugType = "";
+				}
+				break;
+			case DEBUG_PDB_ONLY:
+				configuration.DebugMode = true;
+				compilerParameters.DebugType = "pdbonly";
+				break;
+			case DEBUG_NONE:
+				configuration.DebugMode = false;
+				if (!string.Equals (compilerParameters.DebugType, "none", StringComparison.OrdinalIgnoreCase)) {
+					compilerParameters.DebugType = "";
+				}
+				break;
+			}
 		}
 	}
 	
-	public class CodeGenerationPanel : MultiConfigItemOptionsPanel
+	class CodeGenerationPanel : MultiConfigItemOptionsPanel
 	{
 		CodeGenerationPanelWidget widget;
 		

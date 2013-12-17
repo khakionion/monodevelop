@@ -64,17 +64,17 @@ namespace MonoDevelop.Ide.FindInFiles
 			}
 		}
 
-		public static IEnumerable<Project> CollectProjects (Solution solution, IEnumerable<IEntity> entities)
+		public static IEnumerable<Project> CollectProjects (Solution solution, IEnumerable<object> entities)
 		{
 			return new SearchCollector (solution, null, entities).CollectProjects ();
 		}
 
-		public static IEnumerable<FileList> CollectFiles (Project project, IEnumerable<IEntity> entities)
+		public static IEnumerable<FileList> CollectFiles (Project project, IEnumerable<object> entities)
 		{
 			return new SearchCollector (project.ParentSolution, project, entities).CollectFiles ();
 		}
 
-		public static IEnumerable<FileList> CollectFiles (Solution solution, IEnumerable<IEntity> entities)
+		public static IEnumerable<FileList> CollectFiles (Solution solution, IEnumerable<object> entities)
 		{
 			return new SearchCollector (solution, null, entities).CollectFiles ();
 		}
@@ -104,7 +104,7 @@ namespace MonoDevelop.Ide.FindInFiles
 		Project searchProject;
 		bool searchProjectAdded; // if the searchProject is added, we can stop collecting
 		Solution solution;
-		IEnumerable<IEntity> entities;
+		IEnumerable<object> entities;
 		bool projectOnly; // only collect projects
 		
 		IDictionary<Project, ISet<string>> collectedFiles = new Dictionary<Project, ISet<string>> ();
@@ -114,7 +114,7 @@ namespace MonoDevelop.Ide.FindInFiles
 		ISet<Project> searchedProjects = new HashSet<Project> ();
 
 		/// <param name="searchProject">the project to search. use to null to search the whole solution</param>
-		SearchCollector (Solution solution, Project searchProject, IEnumerable<IEntity> entities)
+		SearchCollector (Solution solution, Project searchProject, IEnumerable<object> entities)
 		{
 			this.solution = solution;
 			this.searchProject = searchProject;
@@ -124,8 +124,17 @@ namespace MonoDevelop.Ide.FindInFiles
 		IEnumerable<Project> CollectProjects ()
 		{
 			projectOnly = true;
-			foreach (var entity in entities) {
-				Collect (TypeSystemService.GetProject (entity), entity);
+			foreach (var o in entities) {
+				var entity = o as IEntity;
+				if (entity != null) {
+					Collect (TypeSystemService.GetProject (entity), entity);
+					continue;
+				}
+				var par = o as IParameter;
+				if (par != null) {
+					Collect (TypeSystemService.GetProject (par.Owner), par.Owner);
+					continue;
+				}
 			}
 			return collectedProjects;
 		}
@@ -133,8 +142,21 @@ namespace MonoDevelop.Ide.FindInFiles
 		IEnumerable<FileList> CollectFiles ()
 		{
 			projectOnly = false;
-			foreach (var entity in entities) {
-				Collect (TypeSystemService.GetProject(entity), entity);
+			foreach (var o in entities) {
+				if (o is INamespace) {
+					Collect (null, null);
+					continue;
+				}
+
+				var par = o as IParameter;
+				if (par != null) {
+					Collect (TypeSystemService.GetProject (par.Owner), par.Owner);
+				} else {
+					var entity = o as IEntity;
+					if (entity == null)
+						continue;
+					Collect (TypeSystemService.GetProject (entity), entity);
+				}
 
 				if (searchProjectAdded) break;
 			}
@@ -187,6 +209,11 @@ namespace MonoDevelop.Ide.FindInFiles
 			}
 			
 			if (sourceProject == null) {
+				if (entity == null) {
+					foreach (var project in solution.GetAllProjects ())
+						AddProject (project);
+					return;
+				}
 				// entity is defined in a referenced assembly
 				var assemblyName = entity.ParentAssembly.AssemblyName;
 				if (!searchedAssemblies.Add (assemblyName)) 
@@ -203,21 +230,22 @@ namespace MonoDevelop.Ide.FindInFiles
 			case Accessibility.Public:
 			case Accessibility.Protected:
 			case Accessibility.ProtectedOrInternal:
+			case Accessibility.Internal:
+			case Accessibility.ProtectedAndInternal:
+
 				if (declaringType != null)
 					Collect (sourceProject, entity.DeclaringTypeDefinition, searchInProject);
 				else if (searchProject != null || searchInProject)
 					AddProject (sourceProject);
 				else {
-					foreach (var project in ReferenceFinder.GetAllReferencingProjects (solution, sourceProject))
+					foreach (var project in ReferenceFinder.GetAllReferencingProjects (solution, sourceProject)) {
+						if (entity.Accessibility == Accessibility.Internal || entity.Accessibility == Accessibility.ProtectedAndInternal) {
+							if (!entity.ParentAssembly.InternalsVisibleTo (TypeSystemService.GetProjectContentWrapper (project).Compilation.MainAssembly))
+								continue;
+						}
 						AddProject (project);
+					}
 				}
-				break;
-			case Accessibility.Internal:
-			case Accessibility.ProtectedAndInternal:
-				if (!projectOnly && declaringType != null)
-					Collect (sourceProject, entity.DeclaringTypeDefinition, true);
-				else
-					AddProject (sourceProject);
 				break;
 			default: // private
 				if (projectOnly)

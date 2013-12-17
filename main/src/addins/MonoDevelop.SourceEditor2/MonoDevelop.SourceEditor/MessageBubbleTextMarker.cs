@@ -34,38 +34,17 @@ using MonoDevelop.Ide;
 using System.Text.RegularExpressions;
 using Mono.TextEditor.Highlighting;
 using MonoDevelop.Ide.Fonts;
+using MonoDevelop.Components;
+using Gtk;
 
 namespace MonoDevelop.SourceEditor
 {
-	public class ErrorText
+	class MessageBubbleTextMarker : MarginMarker, IDisposable, IActionTextLineMarker
 	{
-		public bool IsError { get; set; }
-		public string ErrorMessage { get; set; }
-
-		public ErrorText (bool isError, string errorMessage)
-		{
-			this.IsError = isError;
-			this.ErrorMessage = errorMessage;
-		}
-
-		public override string ToString ()
-		{
-			return string.Format ("[ErrorText: IsError={0}, ErrorMessage={1}]", IsError, ErrorMessage);
-		}
-	}
-
-	public class MessageBubbleTextMarker : TextLineMarker, IBackgroundMarker, IIconBarMarker, IExtendingTextLineMarker, IDisposable, IActionTextLineMarker
-	{
-		MessageBubbleCache cache;
+		readonly MessageBubbleCache cache;
 		
 		internal const int border = 4;
 		
-//		bool fitCalculated = false;
-		bool fitsInSameLine = true;
-		public bool FitsInSameLine {
-			get { return this.fitsInSameLine; }
-		}
-
 		TextEditor editor {
 			get { return cache.editor;}
 		}
@@ -73,25 +52,6 @@ namespace MonoDevelop.SourceEditor
 		public override bool IsVisible {
 			get { return !task.Completed; }
 			set { task.Completed = !value; }
-		}
-
-		bool collapseExtendedErrors = true;
-		public bool CollapseExtendedErrors {
-			get { return collapseExtendedErrors; }
-			set {
-				if (collapseExtendedErrors == value)
-					return;
-				collapseExtendedErrors = value;
-				int lineNumber = editor.Document.OffsetToLineNumber (lineSegment.Offset);
-				if (collapseExtendedErrors) {
-					editor.Document.UnRegisterVirtualTextMarker (this);
-				} else {
-					var fitting = IsCurrentErrorTextFitting ();
-					for (int i = fitting ? 1 : 0; i < errors.Count; i++)
-						editor.Document.RegisterVirtualTextMarker (lineNumber + i + (fitting ? 0 : 1), this);
-				}
-				editor.Document.CommitMultipleLineUpdate (lineNumber, lineNumber + errors.Count + 1);
-			}
 		}
 
 		public bool UseVirtualLines { get; set; }
@@ -172,27 +132,38 @@ namespace MonoDevelop.SourceEditor
 //			fitsInSameLine = editor.TextViewMargin.XOffset + textWidth + LayoutWidth + cache.errorPixbuf.Width + border + editor.LineHeight / 2 < editor.Allocation.Width;
 //		}
 
+		public override TextLineMarkerFlags Flags {
+			get {
+				if (lineSegment != null && lineSegment.Markers.Any (m => m is DebugTextMarker)) 
+					return TextLineMarkerFlags.None;
+
+				return TextLineMarkerFlags.DrawsSelection;
+			}
+		}
+
 		string initialText;
+		bool isError;
 		internal MessageBubbleTextMarker (MessageBubbleCache cache, Task task, DocumentLine lineSegment, bool isError, string errorMessage)
 		{
+			if (cache == null)
+				throw new ArgumentNullException ("cache");
 			this.cache = cache;
 			this.task = task;
 			this.IsVisible = true;
 			this.lineSegment = lineSegment;
 			this.initialText = editor.Document.GetTextAt (lineSegment);
-			this.Flags = TextLineMarkerFlags.DrawsSelection;
-			AddError (isError, errorMessage);
+			this.isError = isError;
+			AddError (task, isError, errorMessage);
 //			cache.Changed += (sender, e) => CalculateLineFit (editor, lineSegment);
 		}
 		
 		static System.Text.RegularExpressions.Regex mcsErrorFormat = new System.Text.RegularExpressions.Regex ("(.+)\\(CS\\d+\\)\\Z");
-		public void AddError (bool isError, string errorMessage)
+		public void AddError (Task task, bool isError, string errorMessage)
 		{
 			var match = mcsErrorFormat.Match (errorMessage);
 			if (match.Success)
 				errorMessage = match.Groups [1].Value;
-			errors.Add (new ErrorText (isError, errorMessage));
-			CollapseExtendedErrors = true;
+			errors.Add (new ErrorText (task, isError, errorMessage));
 			DisposeLayout ();
 		}
 		
@@ -208,27 +179,94 @@ namespace MonoDevelop.SourceEditor
 		public void Dispose ()
 		{
 			DisposeLayout ();
-			if (!CollapseExtendedErrors)
-				editor.Document.UnRegisterVirtualTextMarker (this);
+			cache.DestroyPopoverWindow ();
 		}
 		
 		internal Pango.Layout errorCountLayout;
 		List<MessageBubbleCache.LayoutDescriptor> layouts;
 		
-		internal Cairo.Color[,,,,] colorMatrix {
+		internal AmbientColor MarkerColor {
 			get {
-				bool isError = errors.Any (e => e.IsError);
-				return isError ? cache.errorMatrix : cache.warningMatrix;
+				return isError ? editor.ColorStyle.MessageBubbleErrorMarker : editor.ColorStyle.MessageBubbleWarningMarker;
 			}
 		}
-		
-		internal Cairo.Color gc {
+
+		internal AmbientColor TagColor {
 			get {
-				bool isError = errors.Any (e => e.IsError);
-				return isError ? cache.errorGc : cache.warningGc;
+				return isError ? editor.ColorStyle.MessageBubbleErrorTag : editor.ColorStyle.MessageBubbleWarningTag;
 			}
 		}
-		
+
+		internal AmbientColor TooltipColor {
+			get {
+				return isError ? editor.ColorStyle.MessageBubbleErrorTooltip : editor.ColorStyle.MessageBubbleWarningTooltip;
+			}
+		}
+
+		internal AmbientColor LineColor {
+			get {
+				return isError ? editor.ColorStyle.MessageBubbleErrorLine : editor.ColorStyle.MessageBubbleWarningLine;
+			}
+		}
+
+		internal AmbientColor CounterColor {
+			get {
+				return isError ? editor.ColorStyle.MessageBubbleErrorCounter : editor.ColorStyle.MessageBubbleWarningCounter;
+			}
+		}
+
+		internal AmbientColor IconMarginColor {
+			get {
+				return isError ? editor.ColorStyle.MessageBubbleErrorIconMargin : editor.ColorStyle.MessageBubbleWarningIconMargin;
+			}
+		}
+
+		Cairo.Color BlendSelection (Cairo.Color color, bool selected)
+		{
+			if (!selected)
+				return color;
+			var selectionColor = editor.ColorStyle.SelectedText.Background;
+			const double bubbleAlpha = 0.1;
+			return new Cairo.Color (
+				(color.R * bubbleAlpha + selectionColor.R * (1 - bubbleAlpha)), 
+				(color.G * bubbleAlpha + selectionColor.G * (1 - bubbleAlpha)), 
+				(color.B * bubbleAlpha + selectionColor.B * (1 - bubbleAlpha))
+				);
+		}
+
+		Cairo.Color Highlight (Cairo.Color color, bool highlighted)
+		{
+			if (!highlighted)
+				return color;
+			var selectionColor = editor.ColorStyle.PlainText.Background;
+			const double bubbleAlpha = 0.7;
+			return new Cairo.Color (
+				(color.R * bubbleAlpha + selectionColor.R * (1 - bubbleAlpha)), 
+				(color.G * bubbleAlpha + selectionColor.G * (1 - bubbleAlpha)), 
+				(color.B * bubbleAlpha + selectionColor.B * (1 - bubbleAlpha))
+				);
+		}
+
+		Cairo.Color GetLineColor (bool highlighted, bool selected) 
+		{
+			return BlendSelection (Highlight (LineColor.Color, highlighted), selected);
+		}
+
+		Cairo.Color GetMarkerColor (bool highlighted, bool selected) 
+		{
+			return BlendSelection (Highlight (MarkerColor.Color, highlighted), selected);
+		}
+
+		Cairo.Color GetLineColorBottom (bool highlighted, bool selected) 
+		{
+			return BlendSelection (Highlight (LineColor.SecondColor, highlighted), selected);
+		}
+
+		Cairo.Color GetLineColorBorder (bool highlighted, bool selected) 
+		{
+			return BlendSelection (Highlight (LineColor.BorderColor, highlighted), selected);
+		}
+
 		internal IList<MessageBubbleCache.LayoutDescriptor> Layouts {
 			get { return layouts; }
 		}
@@ -245,7 +283,7 @@ namespace MonoDevelop.SourceEditor
 			
 			if (errorCountLayout == null && errors.Count > 1) {
 				errorCountLayout = new Pango.Layout (editor.PangoContext);
-				errorCountLayout.FontDescription = cache.fontDescription;
+				errorCountLayout.FontDescription = cache.errorCountFontDescription;
 				errorCountLayout.SetText (errors.Count.ToString ());
 			}
 		}
@@ -261,364 +299,26 @@ namespace MonoDevelop.SourceEditor
 			get {
 				if (layouts == null)
 					return 0;
-				if (!CollapseExtendedErrors && errors.Count > 1)
-					return layouts.Max (l => l.Width);
 				return layouts [0].Width;
 			}
 		}
 		
-		Tuple<int, int> GetErrorCountBounds (TextViewMargin.LayoutWrapper wrapper = null)
+		Tuple<int, int> GetErrorCountBounds (LineMetrics metrics)
 		{
 			EnsureLayoutCreated (editor);
-			var layout = wrapper ?? editor.TextViewMargin.GetLayout (lineSegment);
-			try {
-				var lineTextPx = editor.TextViewMargin.XOffset + editor.TextViewMargin.TextStartPosition + layout.PangoWidth / Pango.Scale.PangoScale;
-				if (errors.Count > 1 && errorCountLayout != null || editor.Allocation.Width < lineTextPx + layouts [0].Width) {
-					int ew = 0, eh = 0;
-					if (errorCountLayout != null) {
-						errorCountLayout.GetPixelSize (out ew, out eh);
-					} else {
-						ew = 10;
-					}
-					return Tuple.Create (ew + 10, eh);
-				}
-				return Tuple.Create (0, 0);
-			} finally {
-				if (wrapper == null && layout.IsUncached)
-					layout.Dispose ();
-			}
-		}
-
-		void DrawMessageExtendIcon (Mono.TextEditor.TextEditor editor, Cairo.Context g, double y, int errorCounterWidth, int eh)
-		{
-			EnsureLayoutCreated (editor);
-			double rW = errorCounterWidth - 2;
-			double rH = editor.LineHeight * 3 / 4;
-			
-			double rX = editor.Allocation.Width - rW - 2;
-			double rY = y + (editor.LineHeight - rH) / 2;
-			BookmarkMarker.DrawRoundRectangle (g, rX, rY, 8, rW, rH);
-			
-			g.Color = oldIsOver ? new Cairo.Color (0.3, 0.3, 0.3) : new Cairo.Color (0.5, 0.5, 0.5);
-			g.Fill ();
-			if (CollapseExtendedErrors) {
+			var lineTextPx = editor.TextViewMargin.XOffset + metrics.TextRenderEndPosition;
+			if (errors.Count > 1 && errorCountLayout != null || editor.Allocation.Width < lineTextPx + layouts [0].Width) {
+				int ew = 0, eh = 0;
 				if (errorCountLayout != null) {
-					g.Color = cache.gcLight;
-					g.Save ();
-					g.Translate (rX + rW / 4, rY + (rH - eh) / 2);
-					g.ShowLayout (errorCountLayout);
-					g.Restore ();
+					errorCountLayout.GetPixelSize (out ew, out eh);
 				} else {
-					g.MoveTo (rX + rW / 2 - rW / 4, rY + rH / 4);
-					g.LineTo (rX + rW / 2 + rW / 4, rY + rH / 4);
-					g.LineTo (rX + rW / 2, rY + rH - rH / 4);
-					g.ClosePath ();
-				
-					g.Color = new Cairo.Color (1, 1, 1);
-					g.Fill ();
+					ew = 10;
 				}
-			} else {
-				g.MoveTo (rX + rW / 2 - rW / 4, rY + rH - rH / 4);
-				g.LineTo (rX + rW / 2 + rW / 4, rY + rH - rH / 4);
-				g.LineTo (rX + rW / 2, rY + rH / 4);
-				g.ClosePath ();
-				
-				g.Color = new Cairo.Color (1, 1, 1);
-				g.Fill ();
+				return Tuple.Create (ew + 10, eh);
 			}
+			return Tuple.Create (0, 0);
 		}
-		
-		public bool DrawBackground (TextEditor editor, Cairo.Context g, TextViewMargin.LayoutWrapper layout2, int selectionStart, int selectionEnd, int startOffset, int endOffset, double y, double startXPos, double endXPos, ref bool drawBg)
-		{
-			if (!IsVisible)
-				return true;
-			EnsureLayoutCreated (editor);
-			double x = editor.TextViewMargin.XOffset;
-			int right = editor.Allocation.Width;
-			bool isCaretInLine = startOffset <= editor.Caret.Offset && editor.Caret.Offset <= endOffset;
-			var lineTextPx = editor.TextViewMargin.XOffset + editor.TextViewMargin.TextStartPosition + layout2.PangoWidth / Pango.Scale.PangoScale;
-			int errorCounterWidth = GetErrorCountBounds (layout2).Item1;
-//			int eh = GetErrorCountBounds ().Item2;
-			double x2 = System.Math.Max (right - LayoutWidth - border - (ShowIconsInBubble ? cache.errorPixbuf.Width : 0) - errorCounterWidth, fitsInSameLine ? editor.TextViewMargin.XOffset + editor.LineHeight / 2 : editor.TextViewMargin.XOffset);
-			
-			bool isEolSelected = editor.IsSomethingSelected && editor.SelectionMode != SelectionMode.Block ? editor.SelectionRange.Contains (lineSegment.Offset + lineSegment.Length) : false;
-			
-			int active = editor.Document.GetTextAt (lineSegment) == initialText ? 0 : 1;
-			int highlighted = active == 0 && isCaretInLine ? 1 : 0;
-			int selected = 0;
-			
-			double topSize = Math.Floor (editor.LineHeight / 2);
-			double bottomSize = editor.LineHeight / 2 + editor.LineHeight % 2;
-		
-			if (!fitsInSameLine) {
-				if (isEolSelected) {
-					x -= (int)editor.HAdjustment.Value;
-					editor.TextViewMargin.DrawRectangleWithRuler (g, x, new Cairo.Rectangle (x, y + editor.LineHeight, editor.TextViewMargin.TextStartPosition, editor.LineHeight), editor.ColorStyle.Default.CairoBackgroundColor, true);
-					editor.TextViewMargin.DrawRectangleWithRuler (g, x + editor.TextViewMargin.TextStartPosition, new Cairo.Rectangle (x + editor.TextViewMargin.TextStartPosition, y + editor.LineHeight, editor.Allocation.Width + (int)editor.HAdjustment.Value, editor.LineHeight), editor.ColorStyle.Selection.CairoBackgroundColor, true);
-					x += (int)editor.HAdjustment.Value;
-				} else {
-					editor.TextViewMargin.DrawRectangleWithRuler (g, x, new Cairo.Rectangle (x, y + editor.LineHeight, x2, editor.LineHeight), editor.ColorStyle.Default.CairoBackgroundColor, true);
-				}
-			}
-			DrawRectangle (g, x, y, right, topSize);
-			g.Color = colorMatrix [active, TOP, LIGHT, highlighted, selected];
-			g.Fill ();
-			DrawRectangle (g, x, y + topSize, right, bottomSize);
-			g.Color = colorMatrix [active, BOTTOM, LIGHT, highlighted, selected];
-			g.Fill ();
-			
-			g.MoveTo (new Cairo.PointD (x, y + 0.5));
-			g.LineTo (new Cairo.PointD (x + right, y + 0.5));
-			g.Color = colorMatrix [active, TOP, LINE, highlighted, selected];
-			g.Stroke ();
-			
-			g.MoveTo (new Cairo.PointD (x, y + editor.LineHeight - 0.5));
-			g.LineTo (new Cairo.PointD ((fitsInSameLine ? x + right : x2 + 1), y + editor.LineHeight - 0.5));
-			g.Color = colorMatrix [active, BOTTOM, LINE, highlighted, selected];
-			g.Stroke ();
-			if (editor.Options.ShowRuler) {
-				double divider = Math.Max (editor.TextViewMargin.XOffset, x + editor.TextViewMargin.RulerX);
-				g.MoveTo (new Cairo.PointD (divider + 0.5, y));
-				g.LineTo (new Cairo.PointD (divider + 0.5, y + editor.LineHeight));
-				g.Color = colorMatrix [active, BOTTOM, LINE, highlighted, selected];
-				g.Stroke ();
-			}
 
-// draw background
-			if (layout2.StartSet || selectionStart == endOffset) {
-				double startX;
-				double endX;
-				
-				if (selectionStart != endOffset) {
-					var start = layout2.Layout.IndexToPos ((int)layout2.SelectionStartIndex);
-					startX = (int)(start.X / Pango.Scale.PangoScale);
-					var end = layout2.Layout.IndexToPos ((int)layout2.SelectionEndIndex);
-					endX = (int)(end.X / Pango.Scale.PangoScale);
-				} else {
-					startX = x2;
-					endX = startX;
-				}
-				
-				if (editor.MainSelection.SelectionMode == SelectionMode.Block && startX == endX)
-					endX = startX + 2;
-				startX += startXPos;
-				endX += startXPos;
-				startX = Math.Max (editor.TextViewMargin.XOffset, startX);
-// clip region to textviewmargin start
-				if (isEolSelected)
-					endX = editor.Allocation.Width + (int)editor.HAdjustment.Value;
-				if (startX < endX) {
-					DrawRectangle (g, startX, y, endX - startX, topSize);
-					g.Color = colorMatrix [active, TOP, LIGHT, highlighted, 1];
-					g.Fill ();
-					DrawRectangle (g, startX, y + topSize, endX - startX, bottomSize);
-					g.Color = colorMatrix [active, BOTTOM, LIGHT, highlighted, 1];
-					g.Fill ();
-					
-					g.MoveTo (new Cairo.PointD (startX, y + 0.5));
-					g.LineTo (new Cairo.PointD (endX, y + 0.5));
-					g.Color = colorMatrix [active, TOP, LINE, highlighted, 1];
-					g.Stroke ();
-					
-					if (startX < x2) {
-						g.MoveTo (new Cairo.PointD (startX, y + editor.LineHeight - 0.5));
-						g.LineTo (new Cairo.PointD (System.Math.Min (endX, x2 + 1), y + editor.LineHeight - 0.5));
-						g.Color = colorMatrix [active, BOTTOM, LINE, highlighted, 1];
-						g.Stroke ();
-						if (x2 + 1 < endX) {
-							g.MoveTo (new Cairo.PointD (x2 + 1, y + editor.LineHeight - 0.5));
-							g.LineTo (new Cairo.PointD (endX, y + editor.LineHeight - 0.5));
-							g.Color = colorMatrix [active, BOTTOM, LIGHT, highlighted, 1];
-							g.Stroke ();
-						}
-					}
-					
-					if (editor.Options.ShowRuler) {
-						double divider = Math.Max (editor.TextViewMargin.XOffset, x + editor.TextViewMargin.RulerX);
-						g.MoveTo (new Cairo.PointD (divider + 0.5, y));
-						g.LineTo (new Cairo.PointD (divider + 0.5, y + editor.LineHeight));
-						g.Color = colorMatrix [active, BOTTOM, LINE, highlighted, 1];
-						g.Stroke ();
-					}
-				}
-			}
-			
-			if (!fitsInSameLine)
-				y += editor.LineHeight;
-			double y2 = y + 0.5;
-			double y2Bottom = y2 + editor.LineHeight - 1;
-			selected = isEolSelected && (CollapseExtendedErrors) ? 1 : 0;
-			if (x2 < lineTextPx) 
-				x2 = lineTextPx;
-
-// draw message text background
-			if (CollapseExtendedErrors) {
-				if (!fitsInSameLine) {
-// draw box below line 
-					g.MoveTo (new Cairo.PointD (x2 + 0.5, y2 - 1));
-					g.LineTo (new Cairo.PointD (x2 + 0.5, y2Bottom));
-					g.LineTo (new Cairo.PointD (right, y2Bottom));
-					g.LineTo (new Cairo.PointD (right, y2 - 1));
-					g.ClosePath ();
-					g.Color = colorMatrix [active, BOTTOM, LIGHT, highlighted, selected];
-					g.Fill ();
-					
-					g.MoveTo (new Cairo.PointD (x2 + 0.5, y2 - 1));
-					g.LineTo (new Cairo.PointD (x2 + 0.5, y2Bottom));
-					g.LineTo (new Cairo.PointD (right, y2Bottom));
-					g.Color = colorMatrix [active, BOTTOM, LINE, highlighted, selected];
-					g.Stroke ();
-				} else {
-// draw 'arrow marker' in the same line
-					if (errors.Count > 1) {
-						g.MoveTo (new Cairo.PointD (x2 + 0.5, y2));
-						double mid = y2 + topSize;
-						g.LineTo (new Cairo.PointD (x2 - editor.LineHeight / 2 + 0.5, mid));
-						
-						g.LineTo (new Cairo.PointD (right, mid));
-						g.LineTo (new Cairo.PointD (right, y2));
-						g.ClosePath ();
-						g.Color = colorMatrix [active, TOP, DARK, highlighted, selected];
-						g.Fill ();
-						g.MoveTo (new Cairo.PointD (x2 + 0.5, y2Bottom));
-						g.LineTo (new Cairo.PointD (x2 - editor.LineHeight / 2 + 0.5, mid));
-						
-						g.LineTo (new Cairo.PointD (right, mid));
-						g.LineTo (new Cairo.PointD (right, y2Bottom));
-						g.ClosePath ();
-						
-						g.Color = colorMatrix [active, BOTTOM, DARK, highlighted, selected];
-						g.Fill ();
-					}
-					
-// draw border
-					g.MoveTo (new Cairo.PointD (x2 + 0.5, y2));
-					g.LineTo (new Cairo.PointD (x2 - editor.LineHeight / 2 + 0.5, y2 + editor.LineHeight / 2));
-					
-					g.LineTo (new Cairo.PointD (x2 + 0.5, y2Bottom));
-					g.LineTo (new Cairo.PointD (right, y2Bottom));
-					g.LineTo (new Cairo.PointD (right, y2));
-					g.ClosePath ();
-					
-					g.Color = colorMatrix [active, BOTTOM, LINE, highlighted, selected];
-					g.Stroke ();
-				}
-			} else {
-				if (!fitsInSameLine) {
-// draw box below line
-					g.MoveTo (new Cairo.PointD (x2 + 0.5, y2 - 1));
-					g.LineTo (new Cairo.PointD (x2 + 0.5, y2Bottom));
-					g.LineTo (new Cairo.PointD (right, y2Bottom));
-					g.LineTo (new Cairo.PointD (right, y2 - 1));
-					g.ClosePath ();
-				} else {
-// draw filled arrow box
-					if (!(errors.Count == 1 && !CollapseExtendedErrors)) {
-						g.MoveTo (new Cairo.PointD (x2 + 0.5, y2));
-						g.LineTo (new Cairo.PointD (x2 - editor.LineHeight / 2 + 0.5, y2 + editor.LineHeight / 2));
-						g.LineTo (new Cairo.PointD (x2 + 0.5, y2Bottom));
-						g.LineTo (new Cairo.PointD (right, y2Bottom));
-						g.LineTo (new Cairo.PointD (right, y2));
-						g.ClosePath ();
-					}
-				}
-				g.Color = colorMatrix [active, BOTTOM, LIGHT, highlighted, selected];
-				g.Fill ();
-				
-// draw light bottom line
-				g.MoveTo (new Cairo.PointD (right, y2Bottom));
-				g.LineTo (new Cairo.PointD (x2 + 0.5, y2Bottom));
-				g.Stroke ();
-				
-// stroke left line
-				if (fitsInSameLine) {
-					g.MoveTo (new Cairo.PointD (x2 + 0.5, y2));
-					g.LineTo (new Cairo.PointD (x2 - editor.LineHeight / 2 + 0.5, y2 + editor.LineHeight / 2));
-					g.LineTo (new Cairo.PointD (x2 + 0.5, y2Bottom));
-				} else {
-					g.MoveTo (new Cairo.PointD (x2 + 0.5, y2 - 1));
-					g.LineTo (new Cairo.PointD (x2 + 0.5, y2Bottom + 1));
-				}
-				
-				g.Color = colorMatrix [active, BOTTOM, LINE, highlighted, selected];
-				g.Stroke ();
-				
-// stroke top line
-				if (fitsInSameLine) {
-					g.Color = colorMatrix [active, BOTTOM, LINE, highlighted, selected];
-					g.MoveTo (new Cairo.PointD (right, y2));
-					g.LineTo (new Cairo.PointD (x2 + 0.5, y2));
-					g.Stroke ();
-				}
-			}
-			
-			if (editor.Options.ShowRuler) {
-				double divider = Math.Max (editor.TextViewMargin.XOffset, x + editor.TextViewMargin.RulerX);
-				if (divider >= x2) {
-					g.MoveTo (new Cairo.PointD (divider + 0.5, y2));
-					g.LineTo (new Cairo.PointD (divider + 0.5, y2Bottom));
-					g.Color = colorMatrix [active, BOTTOM, DARK, highlighted, selected];
-					g.Stroke ();
-				}
-			}
-
-			
-			for (int i = 0; i < layouts.Count; i++) {
-				if (!IsCurrentErrorTextFitting (layout2) && !CollapseExtendedErrors)
-					break;
-				
-				var layout = layouts [i];
-				x2 = right - layout.Width - border - (ShowIconsInBubble ? cache.errorPixbuf.Width : 0);
-				if (i == 0) {
-					x2 -= errorCounterWidth;
-					if (x2 < lineTextPx) {
-						//			if (CollapseExtendedErrors) {
-						x2 = lineTextPx;
-						//			}
-					}
-				}
-//				x2 = System.Math.Max (x2, fitsInSameLine ? editor.TextViewMargin.XOffset + editor.LineHeight / 2 : editor.TextViewMargin.XOffset);
-				
-				if (i > 0) {
-					editor.TextViewMargin.DrawRectangleWithRuler (g, x, new Cairo.Rectangle (x, y, right, editor.LineHeight), isEolSelected ? editor.ColorStyle.Selection.CairoBackgroundColor : editor.ColorStyle.Default.CairoBackgroundColor, true);
-					g.MoveTo (new Cairo.PointD (x2 + 0.5, y));
-					g.LineTo (new Cairo.PointD (x2 + 0.5, y + editor.LineHeight));
-					g.LineTo (new Cairo.PointD (right, y + editor.LineHeight));
-					g.LineTo (new Cairo.PointD (right, y));
-					g.ClosePath ();
-					
-					if (CollapseExtendedErrors) {
-						using (var pat = new Cairo.LinearGradient (x2, y, x2, y + editor.LineHeight)) {
-							pat.AddColorStop (0, colorMatrix [active, TOP, LIGHT, highlighted, selected]);
-							pat.AddColorStop (1, colorMatrix [active, BOTTOM, LIGHT, highlighted, selected]);
-							g.Pattern = pat;
-						}
-					} else {
-						g.Color = colorMatrix [active, TOP, LIGHT, highlighted, selected];
-					}
-					g.Fill ();
-					if (editor.Options.ShowRuler) {
-						double divider = Math.Max (editor.TextViewMargin.XOffset, x + editor.TextViewMargin.RulerX);
-						if (divider >= x2) {
-							g.MoveTo (new Cairo.PointD (divider + 0.5, y));
-							g.LineTo (new Cairo.PointD (divider + 0.5, y + editor.LineHeight));
-							g.Color = colorMatrix [active, BOTTOM, DARK, highlighted, selected];
-							g.Stroke ();
-						}
-					}
-				}
-				g.Color = (HslColor)(selected == 0 ? gc : cache.gcSelected);
-				g.Save ();
-				g.Translate (x2 + (ShowIconsInBubble ? cache.errorPixbuf.Width : 0) + border, y + (editor.LineHeight - layout.Height) / 2 + layout.Height % 2);
-				g.ShowLayout (layout.Layout);
-				g.Restore ();
-				y += editor.LineHeight;
-				if (!UseVirtualLines)
-					break;
-			}
-			return true;
-		}
-		
 		static void DrawRectangle (Cairo.Context g, double x, double y, double width, double height)
 		{
 			double right = x + width;
@@ -630,235 +330,346 @@ namespace MonoDevelop.SourceEditor
 			g.LineTo (new Cairo.PointD (x, y));
 			g.ClosePath ();
 		}
-		#region IIconBarMarker implementation
-
-		public void DrawIcon (Mono.TextEditor.TextEditor editor, Cairo.Context cr, DocumentLine line, int lineNumber, double x, double y, double width, double height)
-		{
-			editor.GdkWindow.DrawPixbuf (cache.editor.Style.BaseGC (Gtk.StateType.Normal), 
-				errors.Any (e => e.IsError) ? cache.errorPixbuf : cache.warningPixbuf, 
-				0, 0, 
-				(int)(x + (width - cache.errorPixbuf.Width) / 2), 
-				(int)(y + (height - cache.errorPixbuf.Height) / 2), 
-				cache.errorPixbuf.Width, cache.errorPixbuf.Height, 
-				Gdk.RgbDither.None, 0, 0);
-		}
-
-		public void MousePress (MarginMouseEventArgs args)
-		{
-		}
-
-		public void MouseRelease (MarginMouseEventArgs args)
-		{
-		}
-		
-		public void MouseHover (MarginMouseEventArgs args)
-		{
-			var sb = new System.Text.StringBuilder ();
-			foreach (var error in errors) {
-				if (sb.Length > 0)
-					sb.AppendLine ();
-				sb.Append (error.ErrorMessage);
-			}
-			args.Editor.TooltipText = sb.ToString ();
-		}
-		
-		#endregion
-
-		public Gdk.Rectangle ErrorTextBounds {
-			get {
-				int lineNumber = editor.Document.OffsetToLineNumber (lineSegment.Offset);
-				
-				double y = editor.Allocation.Y + editor.LineToY (lineNumber) - (int)editor.VAdjustment.Value;
-				double height = editor.LineHeight * errors.Count;
-				if (!fitsInSameLine)
-					y += editor.LineHeight;
-				int errorCounterWidth = GetErrorCountBounds ().Item1;
-				
-				double labelWidth = LayoutWidth + border + (ShowIconsInBubble ? cache.errorPixbuf.Width : 0) + errorCounterWidth;
-				if (fitsInSameLine)
-					labelWidth += editor.LineHeight / 2;
-				
-				var layout = editor.TextViewMargin.GetLayout (lineSegment);
-				var lineTextPx = editor.TextViewMargin.XOffset + editor.TextViewMargin.TextStartPosition + layout.PangoWidth / Pango.Scale.PangoScale;
-				labelWidth = Math.Min (editor.Allocation.Width - lineTextPx - editor.TextViewMargin.TextStartPosition, labelWidth);
-				
-				return new Gdk.Rectangle ((int)(editor.Allocation.Width - labelWidth), (int)y, (int)labelWidth, (int)height);
-			}
-		}
 
 		#region IActionTextMarker implementation
 		public bool MousePressed (TextEditor editor, MarginMouseEventArgs args)
 		{
-			if (MouseIsOverMarker (editor, args)) {
-				CollapseExtendedErrors = !CollapseExtendedErrors;
-				editor.QueueDraw ();
-				return true;
-			}
-			MouseIsOverMarker (editor, args);
 			return false;
 		}
-
-		bool MouseIsOverMarker (TextEditor editor, MarginMouseEventArgs args)
-		{
-			int lineNumber = editor.Document.OffsetToLineNumber (lineSegment.Offset);
-			double y = editor.LineToY (lineNumber) - editor.VAdjustment.Value;
-			if (fitsInSameLine) {
-				if (args.Y < y + 2 || args.Y > y + editor.LineHeight - 2)
-					return false;
-			} else {
-				if (args.Y < y + editor.LineHeight + 2 || args.Y > y + editor.LineHeight * 2 - 2)
-					return false;
-			}
-			
-			int errorCounterWidth = GetErrorCountBounds ().Item1;
-			if (errorCounterWidth > 0)
-				return editor.Allocation.Width - editor.TextViewMargin.XOffset - 2 - errorCounterWidth <= args.X;
-			return false;
-		}
-		
-		bool IsCurrentErrorTextFitting (TextViewMargin.LayoutWrapper wrapper = null)
-		{
-			int errorCounterWidth = GetErrorCountBounds (wrapper).Item1;
-			double labelWidth = LayoutWidth + border + (ShowIconsInBubble ? cache.errorPixbuf.Width : 0) + errorCounterWidth + editor.LineHeight / 2;
-			
-			var layout = wrapper ?? editor.TextViewMargin.GetLayout (lineSegment);
-			
-			var lineTextPx = editor.TextViewMargin.XOffset + editor.TextViewMargin.TextStartPosition + layout.PangoWidth / Pango.Scale.PangoScale;
-			
-			if (wrapper == null && layout.IsUncached)
-				layout.Dispose ();
-			
-			return labelWidth < editor.Allocation.Width - lineTextPx - editor.TextViewMargin.TextStartPosition;
-		}
-
-		int MouseIsOverError (TextEditor editor, MarginMouseEventArgs args)
-		{
-			if (layouts == null)
-				return -1;
-			int lineNumber = editor.Document.OffsetToLineNumber (lineSegment.Offset);
-			double y = editor.LineToY (lineNumber) - editor.VAdjustment.Value;
-			double height = editor.LineHeight * errors.Count;
-			if (!fitsInSameLine)
-				y += editor.LineHeight;
-//			Console.WriteLine (lineNumber +  ": height={0}, y={1}, args={2}", height, y, args.Y);
-			if (y > args.Y || args.Y > y + height)
-				return -1;
-			int error = (int)((args.Y - y) / editor.LineHeight);
-//			Console.WriteLine ("error:" + error);
-			if (error >= layouts.Count)
-				return -1;
-			int errorCounterWidth = GetErrorCountBounds ().Item1;
-			
-			double labelWidth = LayoutWidth + border + (ShowIconsInBubble ? cache.errorPixbuf.Width : 0) + errorCounterWidth + editor.LineHeight / 2;
-			
-			var layout = editor.TextViewMargin.GetLayout (lineSegment);
-			
-			var lineTextPx = editor.TextViewMargin.XOffset + editor.TextViewMargin.TextStartPosition + layout.PangoWidth / Pango.Scale.PangoScale;
-			
-			labelWidth = Math.Min (editor.Allocation.Width - lineTextPx - editor.TextViewMargin.TextStartPosition, labelWidth);
-			
-			if (editor.Allocation.Width - editor.TextViewMargin.XOffset - labelWidth < args.X)
-				return error;
-			
-			return -1;
-		}
-
-		bool oldIsOver = false;
 
 		public void MouseHover (TextEditor editor, MarginMouseEventArgs args, TextLineMarkerHoverResult result)
 		{
-			if (this.LineSegment == null)
+			if (!IsVisible)
 				return;
-			bool isOver = MouseIsOverMarker (editor, args);
-			if (isOver != oldIsOver)
-				editor.Document.CommitLineUpdate (this.LineSegment);
-			oldIsOver = isOver;
-			
-			int errorNumber = MouseIsOverError (editor, args);
-			if (errorNumber >= 0) {
-				result.Cursor = cache.arrowCursor;
-				if (!isOver)
-					// don't show tooltip when hovering over error counter layout.
-					result.TooltipMarkup = GLib.Markup.EscapeText (errors[errorNumber].ErrorMessage);
+			if (LineSegment == null)
+				return;
+			if (bubbleDrawX < args.X && args.X < bubbleDrawX + bubbleWidth) {
+				editor.HideTooltip ();
+				result.Cursor = null;
+				cache.StartHover (this, bubbleDrawX, bubbleDrawY, bubbleWidth, bubbleIsReduced);
 			}
-			
 		}
 		#endregion
+
+		double bubbleDrawX, bubbleDrawY;
+		double bubbleWidth;
+		bool bubbleIsReduced;
 		
-		public override void Draw (TextEditor editor, Cairo.Context g, Pango.Layout layout, bool selected, int startOffset, int endOffset, double y, double startXPos, double endXPos)
+		public override void Draw (TextEditor editor, Cairo.Context g, double y, LineMetrics metrics)
 		{
-			var bounds = GetErrorCountBounds ();
-			int errorCounterWidth = bounds.Item1;
-			int eh = bounds.Item2;
-			
-			if (errorCounterWidth > 0)
-				DrawMessageExtendIcon (editor, g, y, errorCounterWidth, eh);
 
 		}
 
-		#region IExtendingTextMarker implementation
-		public void Draw (TextEditor editor, Cairo.Context g, int lineNr, Cairo.Rectangle lineArea)
+		public override void DrawAfterEol (TextEditor textEditor, Cairo.Context g, double y, EndOfLineMetrics metrics)
 		{
+			if (!IsVisible)
+				return;
 			EnsureLayoutCreated (editor);
-			int lineNumber = editor.Document.OffsetToLineNumber (lineSegment.Offset);
-			int errorNumber = lineNr - lineNumber;
-			if (!IsCurrentErrorTextFitting ())
-				errorNumber--;
-			double x = editor.TextViewMargin.XOffset;
-			double y = lineArea.Y;
-			double right = editor.Allocation.Width;
-			int errorCounterWidth = GetErrorCountBounds ().Item1;
-//			int eh = GetErrorCountBounds ().Item2;
-			
-			double x2 = System.Math.Max (right - LayoutWidth - border - (ShowIconsInBubble ? cache.errorPixbuf.Width : 0) - errorCounterWidth, fitsInSameLine ? editor.TextViewMargin.XOffset + editor.LineHeight / 2 : editor.TextViewMargin.XOffset);
-			if (errors.Count == 1)
-				x2 = editor.TextViewMargin.XOffset;
-//			bool isEolSelected = editor.IsSomethingSelected && editor.SelectionMode != SelectionMode.Block ? editor.SelectionRange.Contains (lineSegment.Offset  + lineSegment.EditableLength) : false;
-			int active = editor.Document.GetTextAt (lineSegment) == initialText ? 0 : 1;
-			bool isCaretInLine = lineSegment.Offset <= editor.Caret.Offset && editor.Caret.Offset <= lineSegment.EndOffsetIncludingDelimiter;
-			int highlighted = active == 0 && isCaretInLine ? 1 : 0;
-			int selected = 0;
-			var layout = layouts [errorNumber];
-			x2 = right - LayoutWidth - border - (ShowIconsInBubble ? cache.errorPixbuf.Width : 0);
-			
-			x2 -= errorCounterWidth;
-			x2 = System.Math.Max (x2, fitsInSameLine ? editor.TextViewMargin.XOffset + editor.LineHeight / 2 : editor.TextViewMargin.XOffset);
-			
-			g.MoveTo (new Cairo.PointD (x2 + 0.5, y));
-			g.LineTo (new Cairo.PointD (x2 + 0.5, y + editor.LineHeight));
-			g.LineTo (new Cairo.PointD (right, y + editor.LineHeight));
-			g.LineTo (new Cairo.PointD (right, y));
-			g.ClosePath ();
-			g.Color = colorMatrix [active, BOTTOM, LIGHT, highlighted, selected];
+			int errorCounterWidth = 0, eh = 0;
+			if (errorCountLayout != null) {
+				errorCountLayout.GetPixelSize (out errorCounterWidth, out eh);
+				errorCounterWidth = Math.Max (15, Math.Max (errorCounterWidth + 3, (int)(editor.LineHeight * 3 / 4)));
+			}
+
+			var sx = metrics.TextRenderEndPosition;
+			var width = LayoutWidth + errorCounterWidth + editor.LineHeight;
+			var drawLayout = layouts[0].Layout;
+			bool customLayout = true; //sx + width > editor.Allocation.Width;
+			bool hideText = false;
+			bubbleIsReduced = customLayout;
+			var showErrorCount = errorCounterWidth > 0 && errorCountLayout != null;
+			double roundingRadius = editor.LineHeight / 2 - 1;
+
+			if (customLayout) {
+				width = editor.Allocation.Width - sx;
+				string text = layouts[0].Layout.Text;
+				drawLayout = new Pango.Layout (editor.PangoContext);
+				drawLayout.FontDescription = cache.fontDescription;
+				var paintWidth = (width - errorCounterWidth - editor.LineHeight + 4);
+				var minWidth = Math.Max (25, errorCounterWidth) * editor.Options.Zoom;
+				if (paintWidth < minWidth) {
+					hideText = true;
+					showErrorCount = false;
+//					drawLayout.SetMarkup ("<span weight='heavy'>···</span>");
+					width = minWidth;
+					roundingRadius = 10 * editor.Options.Zoom;
+					sx = Math.Min (sx, editor.Allocation.Width - width);
+				} else {
+					drawLayout.Ellipsize = Pango.EllipsizeMode.End;
+					drawLayout.Width = (int)(paintWidth * Pango.Scale.PangoScale);
+					drawLayout.SetText (text);
+					int w2, h2;
+					drawLayout.GetPixelSize (out w2, out h2);
+					width = w2 + errorCounterWidth + editor.LineHeight;
+				}
+			}
+			bubbleDrawX = sx - editor.TextViewMargin.XOffset;
+			bubbleDrawY = y;
+			bubbleWidth = width;
+
+			var bubbleHeight = editor.LineHeight - 1;
+			g.RoundedRectangle (sx, y + 1, width, bubbleHeight, roundingRadius);
+			g.SetSourceColor (TagColor.Color);
 			g.Fill ();
-			
-			g.Color = colorMatrix [active, BOTTOM, LINE, highlighted, selected];
-			g.MoveTo (new Cairo.PointD (x2 + 0.5, y));
-			g.LineTo (new Cairo.PointD (x2 + 0.5, y + editor.LineHeight));
-			if (errorNumber == errors.Count - 1)
-				g.LineTo (new Cairo.PointD (lineArea.X + lineArea.Width, y + editor.LineHeight));
-			g.Stroke ();
-			
+
+			// Draw error count icon
+			if (showErrorCount) {
+				var errorCounterHeight = bubbleHeight - 2;
+				var errorCounterX = sx + width - errorCounterWidth - 3;
+				var errorCounterY = y + 1 + (bubbleHeight - errorCounterHeight) / 2;
+
+				g.RoundedRectangle (
+					errorCounterX - 1, 
+					errorCounterY - 1, 
+					errorCounterWidth + 2, 
+					errorCounterHeight + 2, 
+					editor.LineHeight / 2 - 3
+				);
+
+				g.SetSourceColor (new Cairo.Color (0, 0, 0, 0.081));
+				g.Fill ();
+
+				g.RoundedRectangle (
+					errorCounterX, 
+					errorCounterY, 
+					errorCounterWidth, 
+					errorCounterHeight, 
+					editor.LineHeight / 2 - 3
+				);
+				using (var lg = new Cairo.LinearGradient (errorCounterX, errorCounterY, errorCounterX, errorCounterY + errorCounterHeight)) {
+					lg.AddColorStop (0, CounterColor.Color);
+					lg.AddColorStop (1, CounterColor.Color.AddLight (-0.1));
+					g.SetSource (lg);
+					g.Fill ();
+				}
+
+				g.Save ();
+
+				int ew;
+				errorCountLayout.GetPixelSize (out ew, out eh);
+
+				g.Translate (
+					errorCounterX + (2 + errorCounterWidth - ew) / 2,
+					errorCounterY + (-1 + errorCounterHeight - eh) / 2
+				);
+				g.SetSourceColor (CounterColor.SecondColor);
+				g.ShowLayout (errorCountLayout);
+				g.Restore ();
+			}
+
+			if (hideText) {
+				// Draw dots
+				double radius = 2 * editor.Options.Zoom;
+				double spacing = 1 * editor.Options.Zoom;
+				double shadowOffset = 1 * editor.Options.Zoom;
+
+				sx += 1 * editor.Options.Zoom + Math.Ceiling((bubbleWidth - 3 * (radius * 2) - 2 * spacing) / 2);
+				for (int i = 0; i < 3; i++) {
+					g.Arc (sx, y + 1 + bubbleHeight / 2 + shadowOffset, radius, 0, Math.PI * 2);
+					g.SetSourceColor (MessageBubbleCache.ShadowColor);
+					g.Fill ();
+
+					g.Arc (sx, y + 1 + bubbleHeight / 2, radius, 0, Math.PI * 2);
+					g.SetSourceColor (TagColor.SecondColor);
+					g.Fill ();
+					sx += radius * 2 + spacing;
+				}
+
+			} else {
+				// Draw label text
+				g.Save ();
+				g.Translate (sx + editor.LineHeight / 2, y + (editor.LineHeight - layouts [0].Height) / 2 + 1);
+
+				// draw shadow
+				g.SetSourceColor (MessageBubbleCache.ShadowColor);
+				g.ShowLayout (drawLayout);
+				g.Translate (0, -1);
+
+				g.SetSourceColor (TagColor.SecondColor);
+				g.ShowLayout (drawLayout);
+				g.Restore ();
+			}
+
+			if (customLayout)
+				drawLayout.Dispose ();
+
+		}
+
+		#region MarginMarker
+
+		public override bool CanDrawBackground (Margin margin)
+		{
+			if (!IsVisible)
+				return false;
+			return margin is FoldMarkerMargin || margin is GutterMargin || margin is IconMargin || margin is ActionMargin;
+		}
+
+		public override bool CanDrawForeground (Margin margin)
+		{
+			if (!IsVisible)
+				return false;
+			return margin is IconMargin;
+		}
+
+		void DrawIconMarginBackground (TextEditor ed, Cairo.Context cr, MarginDrawMetrics metrics)
+		{
+			cr.Rectangle (metrics.X, metrics.Y, metrics.Width, metrics.Height);
+			cr.SetSourceColor (IconMarginColor.Color);
+			cr.Fill ();
+			cr.MoveTo (metrics.Right - 0.5, metrics.Y);
+			cr.LineTo (metrics.Right - 0.5, metrics.Bottom);
+			cr.SetSourceColor (IconMarginColor.BorderColor);
+			cr.Stroke ();
+			if (cache.CurrentSelectedTextMarker != null && cache.CurrentSelectedTextMarker != this) {
+				cr.Rectangle (metrics.X, metrics.Y, metrics.Width, metrics.Height);
+				cr.SetSourceRGBA (ed.ColorStyle.IndicatorMargin.Color.R, ed.ColorStyle.IndicatorMargin.Color.G, ed.ColorStyle.IndicatorMargin.Color.B, 0.5);
+				cr.Fill ();
+			}
+		}
+
+		public override void DrawForeground (TextEditor editor, Cairo.Context cr, MarginDrawMetrics metrics)
+		{
+			cr.Save ();
+			cr.Translate (
+				metrics.X + 0.5 + (metrics.Width - 2 - cache.errorPixbuf.Width) / 2,
+				metrics.Y + 0.5 + (metrics.Height - cache.errorPixbuf.Height) / 2
+				);
+			Gdk.CairoHelper.SetSourcePixbuf (
+				cr,
+				errors.Any (e => e.IsError) ? cache.errorPixbuf : cache.warningPixbuf, 0, 0);
+			cr.Paint ();
+			cr.Restore ();
+
+		}
+
+		public override bool DrawBackground (TextEditor editor, Cairo.Context cr, MarginDrawMetrics metrics)
+		{
+			if (metrics.Margin is FoldMarkerMargin || metrics.Margin is GutterMargin || metrics.Margin is ActionMargin)
+				return DrawMarginBackground (editor, metrics.Margin, cr, metrics.Area, lineSegment, metrics.LineNumber, metrics.X, metrics.Y, metrics.Height);
+			if (metrics.Margin is IconMargin) {
+				DrawIconMarginBackground (editor, cr, metrics);
+				return true;
+			}
+			return false;
+		}
+
+		bool DrawMarginBackground (TextEditor e, Margin margin, Cairo.Context cr, Cairo.Rectangle area, DocumentLine documentLine, long line, double x, double y, double lineHeight)
+		{
+			if (cache.CurrentSelectedTextMarker != null && cache.CurrentSelectedTextMarker != this)
+				return false;
+			cr.Rectangle (x, y, margin.Width, lineHeight);
+			cr.SetSourceColor (LineColor.Color);
+			cr.Fill ();
+			return true;
+		}
+
+
+		#endregion
+
+		#region text background
+
+		public override bool DrawBackground (TextEditor editor, Cairo.Context g, double y, LineMetrics metrics)
+		{
+			if (!IsVisible)
+				return false;
+			bool markerShouldDrawnAsHidden = cache.CurrentSelectedTextMarker != null && cache.CurrentSelectedTextMarker != this;
+			if (metrics.LineSegment.Markers.Any (m => m is DebugTextMarker))
+				return false;
+
+			EnsureLayoutCreated (editor);
+			double x = editor.TextViewMargin.XOffset;
+			int right = editor.Allocation.Width;
+			bool isCaretInLine = metrics.TextStartOffset <= editor.Caret.Offset && editor.Caret.Offset <= metrics.TextEndOffset;
+			int errorCounterWidth = GetErrorCountBounds (metrics).Item1;
+
+			double x2 = System.Math.Max (right - LayoutWidth - border - (ShowIconsInBubble ? cache.errorPixbuf.Width : 0) - errorCounterWidth, editor.TextViewMargin.XOffset + editor.LineHeight / 2);
+
+			bool isEolSelected = editor.IsSomethingSelected && editor.SelectionMode != Mono.TextEditor.SelectionMode.Block ? editor.SelectionRange.Contains (lineSegment.Offset + lineSegment.Length) : false;
+
+			int active = editor.Document.GetTextAt (lineSegment) == initialText ? 0 : 1;
+			bool highlighted = active == 0 && isCaretInLine;
+
+			// draw background
+			if (!markerShouldDrawnAsHidden) {
+				DrawRectangle (g, x, y, right, editor.LineHeight);
+				g.SetSourceColor (LineColor.Color);
+				g.Fill ();
+
+				if (metrics.Layout.StartSet || metrics.SelectionStart == metrics.TextEndOffset) {
+					double startX;
+					double endX;
+
+					if (metrics.SelectionStart != metrics.TextEndOffset) {
+						var start = metrics.Layout.Layout.IndexToPos ((int)metrics.Layout.SelectionStartIndex);
+						startX = (int)(start.X / Pango.Scale.PangoScale);
+						var end = metrics.Layout.Layout.IndexToPos ((int)metrics.Layout.SelectionEndIndex);
+						endX = (int)(end.X / Pango.Scale.PangoScale);
+					} else {
+						startX = x2;
+						endX = startX;
+					}
+
+					if (editor.MainSelection.SelectionMode == Mono.TextEditor.SelectionMode.Block && startX == endX)
+						endX = startX + 2;
+					startX += metrics.TextRenderStartPosition;
+					endX += metrics.TextRenderStartPosition;
+					startX = Math.Max (editor.TextViewMargin.XOffset, startX);
+					// clip region to textviewmargin start
+					if (isEolSelected)
+						endX = editor.Allocation.Width + (int)editor.HAdjustment.Value;
+					if (startX < endX) {
+						DrawRectangle (g, startX, y, endX - startX, editor.LineHeight);
+						g.SetSourceColor (GetLineColor (highlighted, true));
+						g.Fill ();
+					}
+				}
+				DrawErrorMarkers (editor, g, metrics, y);
+			}
+
+			double y2 = y + 0.5;
+			double y2Bottom = y2 + editor.LineHeight - 1;
+			var selected = isEolSelected;
+			var lineTextPx = editor.TextViewMargin.XOffset + editor.TextViewMargin.TextStartPosition + metrics.Layout.Width;
+			if (x2 < lineTextPx) 
+				x2 = lineTextPx;
+
 			if (editor.Options.ShowRuler) {
 				double divider = Math.Max (editor.TextViewMargin.XOffset, x + editor.TextViewMargin.RulerX);
 				if (divider >= x2) {
-					g.MoveTo (new Cairo.PointD (divider + 0.5, y));
-					g.LineTo (new Cairo.PointD (divider + 0.5, y + editor.LineHeight));
-					g.Color = colorMatrix [active, BOTTOM, DARK, highlighted, selected];
+					g.MoveTo (new Cairo.PointD (divider + 0.5, y2));
+					g.LineTo (new Cairo.PointD (divider + 0.5, y2Bottom));
+					g.SetSourceColor (GetLineColorBorder (highlighted, selected));
 					g.Stroke ();
 				}
 			}
-			g.Save ();
-			g.Translate (x2 + (ShowIconsInBubble ? cache.errorPixbuf.Width : 0) + border, y + (editor.LineHeight - layout.Height) / 2 + layout.Height % 2);
-			g.Color = selected == 0 ? gc : cache.gcSelected;
-			g.ShowLayout (layout.Layout);
-			g.Restore ();
-			
-//			if (ShowIconsInBubble)
-//				win.DrawPixbuf (editor.Style.BaseGC (Gtk.StateType.Normal), errors[errorNumber].IsError ? errorPixbuf : warningPixbuf, 0, 0, x2, y + (editor.LineHeight - errorPixbuf.Height) / 2, errorPixbuf.Width, errorPixbuf.Height, Gdk.RgbDither.None, 0, 0);
+
+			return true;
 		}
-		
+
+		void DrawErrorMarkers (TextEditor editor, Cairo.Context g, LineMetrics metrics, double y)
+		{
+			uint curIndex = 0, byteIndex = 0;
+
+			var o = metrics.LineSegment.Offset;
+
+			foreach (var task in errors.Select (t => t.Task)) {
+				var column = (uint)(Math.Min (Math.Max (0, task.Column - 1), metrics.Layout.LineChars.Length));
+				int index = (int)metrics.Layout.TranslateToUTF8Index (column, ref curIndex, ref byteIndex);
+				var pos = metrics.Layout.Layout.IndexToPos (index);
+				var co = o + task.Column - 1;
+				g.SetSourceColor (GetMarkerColor (false, metrics.SelectionStart <= co && co < metrics.SelectionEnd));
+				g.MoveTo (
+					metrics.TextRenderStartPosition + editor.TextViewMargin.TextStartPosition + pos.X / Pango.Scale.PangoScale,
+					y + editor.LineHeight - 3
+					);
+				g.RelLineTo (3, 3);
+				g.RelLineTo (-6, 0);
+				g.ClosePath ();
+
+				g.Fill ();
+			}
+		}
+
 		#endregion
-		
 	}
 }

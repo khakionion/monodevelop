@@ -99,7 +99,7 @@ namespace MonoDevelop.SourceEditor.OptionPanels
 			if (sheme == null)
 				return;
 			this.buttonExport.Sensitive = true;
-			string fileName = Mono.TextEditor.Highlighting.SyntaxModeService.GetFileNameForStyle (sheme);
+			string fileName = sheme.FileName;
 			if (fileName == null)
 				return;
 			this.removeButton.Sensitive = true;
@@ -111,7 +111,8 @@ namespace MonoDevelop.SourceEditor.OptionPanels
 			TreeIter selectedIter;
 			if (styleTreeview.Selection.GetSelected (out selectedIter)) {
 				var editor = new ColorShemeEditor (this);
-				editor.SetSheme ((Mono.TextEditor.Highlighting.ColorScheme)this.styleStore.GetValue (selectedIter, 1));
+				var colorScheme = (Mono.TextEditor.Highlighting.ColorScheme)this.styleStore.GetValue (selectedIter, 1);
+				editor.SetSheme (colorScheme);
 				MessageService.RunCustomDialog (editor, dialog);
 				editor.Destroy ();
 			}
@@ -123,7 +124,7 @@ namespace MonoDevelop.SourceEditor.OptionPanels
 				return Mono.TextEditor.Highlighting.SyntaxModeService.GetColorStyle (styleName);
 			} catch (Exception e) {
 				if (showException)
-					MessageService.ShowError ("Error while importing color style.", e.InnerException.Message);
+					MessageService.ShowError ("Error while importing color style " + styleName, (e.InnerException ?? e).Message);
 				return Mono.TextEditor.Highlighting.SyntaxModeService.DefaultColorStyle;
 			}
 		
@@ -140,7 +141,7 @@ namespace MonoDevelop.SourceEditor.OptionPanels
 				string name = style.Name ?? "";
 				string description = style.Description ?? "";
 				// translate only build-in sheme names
-				if (string.IsNullOrEmpty (Mono.TextEditor.Highlighting.SyntaxModeService.GetFileNameForStyle (style))) {
+				if (string.IsNullOrEmpty (style.FileName)) {
 					try {
 						name = GettextCatalog.GetString (name);
 						if (!string.IsNullOrEmpty (description))
@@ -160,11 +161,11 @@ namespace MonoDevelop.SourceEditor.OptionPanels
 			TreeIter selectedIter;
 			if (!styleTreeview.Selection.GetSelected (out selectedIter)) 
 				return;
-			var sheme = (Mono.TextEditor.Highlighting.ColorScheme)this.styleStore.GetValue (selectedIter, 1);
+			var sheme = (ColorScheme)this.styleStore.GetValue (selectedIter, 1);
 			
-			string fileName = Mono.TextEditor.Highlighting.SyntaxModeService.GetFileNameForStyle (sheme);
+			string fileName = sheme.FileName;
 			
-			if (fileName != null && fileName.StartsWith (SourceEditorDisplayBinding.SyntaxModePath)) {
+			if (fileName != null && fileName.StartsWith (SourceEditorDisplayBinding.SyntaxModePath, StringComparison.Ordinal)) {
 				Mono.TextEditor.Highlighting.SyntaxModeService.Remove (sheme);
 				File.Delete (fileName);
 				ShowStyles ();
@@ -176,13 +177,16 @@ namespace MonoDevelop.SourceEditor.OptionPanels
 			var dialog = new SelectFileDialog (GettextCatalog.GetString ("Highlighting Scheme"), Gtk.FileChooserAction.Save) {
 				TransientFor = this.Toplevel as Gtk.Window,
 			};
-			dialog.AddFilter (null, "*.xml");
+			dialog.AddFilter (GettextCatalog.GetString ("Color schemes"), "*.json");
 			if (!dialog.Run ())
 				return;
 			TreeIter selectedIter;
 			if (styleTreeview.Selection.GetSelected (out selectedIter)) {
 				var sheme = (Mono.TextEditor.Highlighting.ColorScheme)this.styleStore.GetValue (selectedIter, 1);
-				sheme.Save (dialog.SelectedFile);
+				var selectedFile = dialog.SelectedFile.ToString ();
+				if (!selectedFile.EndsWith (".json", StringComparison.Ordinal))
+					selectedFile += ".json";
+				sheme.Save (selectedFile);
 			}
 
 		}
@@ -192,45 +196,23 @@ namespace MonoDevelop.SourceEditor.OptionPanels
 			var dialog = new SelectFileDialog (GettextCatalog.GetString ("Highlighting Scheme"), Gtk.FileChooserAction.Open) {
 				TransientFor = this.Toplevel as Gtk.Window,
 			};
-			dialog.AddFilter (null, "*.xml");
+			dialog.AddFilter (GettextCatalog.GetString ("Color schemes"), "*.json");
+			dialog.AddFilter (GettextCatalog.GetString ("Visual Studio .NET settings"), "*.vssettings");
 			if (!dialog.Run ())
 				return;
-			
-			System.Collections.Generic.List<System.Xml.Schema.ValidationEventArgs> validationResult;
+
+			string newFileName = SourceEditorDisplayBinding.SyntaxModePath.Combine (dialog.SelectedFile.FileName);
+
+			bool success = true;
 			try {
-				validationResult = Mono.TextEditor.Highlighting.SyntaxModeService.ValidateStyleFile (dialog.SelectedFile);
-			} catch (Exception) {
-				MessageService.ShowError (GettextCatalog.GetString ("Validation of style file failed."));
-				return;
+				File.Copy (dialog.SelectedFile.FullPath, newFileName);
+			} catch (Exception e) {
+				success = false;
+				LoggingService.LogError ("Can't copy syntax mode file.", e);
 			}
-			
-			if (validationResult.Count == 0) {
-				string newFileName = SourceEditorDisplayBinding.SyntaxModePath.Combine (dialog.SelectedFile.FileName);
-				if (!newFileName.EndsWith ("Style.xml"))
-					newFileName = SourceEditorDisplayBinding.SyntaxModePath.Combine (dialog.SelectedFile.FileNameWithoutExtension + "Style.xml");
-				bool success = true;
-				try {
-					File.Copy (dialog.SelectedFile, newFileName);
-				} catch (Exception e) {
-					success = false;
-					LoggingService.LogError ("Can't copy syntax mode file.", e);
-				}
-				if (success) {
-					SourceEditorDisplayBinding.LoadCustomStylesAndModes ();
-					ShowStyles ();
-				}
-			} else {
-				StringBuilder errorMessage = new StringBuilder ();
-				errorMessage.AppendLine (GettextCatalog.GetString ("Validation of style file failed."));
-				int count = 0;
-				foreach (System.Xml.Schema.ValidationEventArgs vArg in validationResult) {
-					errorMessage.AppendLine (vArg.Message);
-					if (count++ > 5) {
-						errorMessage.AppendLine ("...");
-						break;
-					}
-				}
-				MessageService.ShowError (errorMessage.ToString ());
+			if (success) {
+				SourceEditorDisplayBinding.LoadCustomStylesAndModes ();
+				ShowStyles ();
 			}
 		}
 		
@@ -243,8 +225,11 @@ namespace MonoDevelop.SourceEditor.OptionPanels
 		{
 			if (IdeApp.Workbench.ActiveDocument != null) {
 				IdeApp.Workbench.ActiveDocument.UpdateParseDocument ();
-				IdeApp.Workbench.ActiveDocument.Editor.Parent.TextViewMargin.PurgeLayoutCache ();
-				IdeApp.Workbench.ActiveDocument.Editor.Parent.QueueDraw ();
+				var editor = IdeApp.Workbench.ActiveDocument.Editor;
+				if (editor != null) {
+					editor.Parent.TextViewMargin.PurgeLayoutCache ();
+					editor.Parent.QueueDraw ();
+				}
 			}
 		}
 		

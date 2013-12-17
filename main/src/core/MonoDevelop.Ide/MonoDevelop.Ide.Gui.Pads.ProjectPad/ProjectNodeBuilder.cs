@@ -135,12 +135,17 @@ namespace MonoDevelop.Ide.Gui.Pads.ProjectPad
 			// Gray out the project name if it is not selected in the current build configuration
 			
 			SolutionConfiguration conf = p.ParentSolution.GetConfiguration (IdeApp.Workspace.ActiveConfiguration);
-			if (conf == null || !conf.BuildEnabledForItem (p)) {
+			SolutionConfigurationEntry ce = null;
+			bool noMapping = conf == null || (ce = conf.GetEntryForItem (p)) == null;
+			bool missingConfig = false;
+			if (noMapping || !ce.Build || (missingConfig = p.Configurations [ce.ItemConfiguration] == null)) {
 				Gdk.Pixbuf ticon = Context.GetComposedIcon (icon, "project-no-build");
 				if (ticon == null)
 					ticon = Context.CacheComposedIcon (icon, "project-no-build", ImageService.MakeTransparent (icon, 0.5));
 				icon = ticon;
-				label = "<span foreground='gray'>" + label + " <small>(not built in active configuration)</small></span>";
+				label = missingConfig
+					? "<span foreground='red'>" + label + " <small>(invalid configuration mapping)</small></span>"
+					: "<span foreground='gray'>" + label + " <small>(not built in active configuration)</small></span>";
 			}
 		}
 
@@ -314,11 +319,12 @@ namespace MonoDevelop.Ide.Gui.Pads.ProjectPad
 				}
 			}
 		}
-		
+
+		static HashSet<string> propertiesThatAffectDisplay = new HashSet<string> (new string[] { null, "DependsOn", "Link", "Visible" });
 		void OnFilePropertyChanged (object sender, ProjectFileEventArgs e)
 		{
-			foreach (ProjectFileEventInfo args in e) {
-				ITreeBuilder tb = Context.GetTreeBuilder (args.Project);
+			foreach (var project in e.Where (x => propertiesThatAffectDisplay.Contains (x.Property)).Select (x => x.Project).Distinct ()) {
+				ITreeBuilder tb = Context.GetTreeBuilder (project);
 				if (tb != null) tb.UpdateAll ();
 			}
 		}
@@ -411,6 +417,20 @@ namespace MonoDevelop.Ide.Gui.Pads.ProjectPad
 					return;
 				}
 			}
+		}
+
+		[CommandHandler (ProjectCommands.EditSolutionItem)]
+		public void OnEditProject ()
+		{
+			Project project = (Project) CurrentNode.DataItem;
+			IdeApp.Workbench.OpenDocument (project.FileName, project);
+		}
+
+		[CommandUpdateHandler (ProjectCommands.EditSolutionItem)]
+		public void OnEditProjectUpdate (CommandInfo info)
+		{
+			var p = (Project) CurrentNode.DataItem;
+			info.Visible = !IdeApp.Workbench.Documents.Any (d => d.FileName == p.FileName);
 		}
 		
 		public override DragOperation CanDragNode ()

@@ -37,6 +37,7 @@ using MonoDevelop.Core;
 using MonoDevelop.Ide.Gui.Components;
 
 using StockIcons = MonoDevelop.Ide.Gui.Stock;
+using Mono.TextEditor;
 
 namespace MonoDevelop.Components.MainToolbar
 {
@@ -85,7 +86,7 @@ namespace MonoDevelop.Components.MainToolbar
 					gradient.AddColorStop (0.5, targetColor);
 					gradient.AddColorStop (1.0, transparentColor);
 
-					context.Pattern = gradient;
+					context.SetSource (gradient);
 
 					context.Rectangle (x1, arg.Allocation.Y, x2 - x1, arg.Allocation.Height);
 					context.Fill ();
@@ -117,7 +118,7 @@ namespace MonoDevelop.Components.MainToolbar
 			int text_x = progress_bar_x + Styles.ProgressBarInnerPadding;
 			int text_width = progress_bar_width - (Styles.ProgressBarInnerPadding * 2);
 
-			float textTweenValue = arg.TextAnimationProgress;
+			double textTweenValue = arg.TextAnimationProgress;
 
 			if (arg.LastText != null) {
 				double opacity = Math.Max (0.0f, 1.0f - textTweenValue);
@@ -140,7 +141,7 @@ namespace MonoDevelop.Components.MainToolbar
 			CairoExtensions.RoundedRectangle (context, region.X + .5, region.Y + .5, region.Width - 1, region.Height - 1, rounding);
 		}
 
-		void DrawBuildEffect (Cairo.Context context, Gdk.Rectangle area, float progress, float opacity)
+		void DrawBuildEffect (Cairo.Context context, Gdk.Rectangle area, double progress, double opacity)
 		{
 			context.Save ();
 			LayoutRoundedRectangle (context, area);
@@ -159,18 +160,18 @@ namespace MonoDevelop.Components.MainToolbar
 				new { Radius = 215, Thickness = 20, Speed = 2, ArcLength = Math.PI * 1.25 }
 			};
 
-			float zmod = 1.0f;
-			float zporg = progress;
+			double zmod = 1.0d;
+			double zporg = progress;
 			foreach (var arc in circles) {
-				float zoom = 1.0f;
-				zoom = (float) Math.Sin (zporg * Math.PI * 2 + zmod);
-				zoom = ((zoom + 1) / 6.0f) + .05f;
+				double zoom = 1.0d;
+				zoom = (double) Math.Sin (zporg * Math.PI * 2 + zmod);
+				zoom = ((zoom + 1) / 6.0d) + .05d;
 
 				context.Rotate (Math.PI * 2 * progress * arc.Speed);
 				context.MoveTo (arc.Radius * zoom, 0);
 				context.Arc (0, 0, arc.Radius * zoom, 0, arc.ArcLength);
 				context.LineWidth = arc.Thickness * zoom;
-				context.Color = CairoExtensions.ParseColor ("B1DDED", 0.35 * opacity);
+				context.SetSourceColor (CairoExtensions.ParseColor ("B1DDED", 0.35 * opacity));
 				context.Stroke ();
 				context.Rotate (Math.PI * 2 * -progress * arc.Speed);
 
@@ -197,12 +198,12 @@ namespace MonoDevelop.Components.MainToolbar
 		{
 			LayoutRoundedRectangle (context, region, -1, -1);
 			context.LineWidth = 1;
-			context.Color = Styles.StatusBarInnerColor;
+			context.SetSourceColor (Styles.StatusBarInnerColor);
 			context.Stroke ();
 
 			LayoutRoundedRectangle (context, region);
 			context.LineWidth = 1;
-			context.Color = Styles.StatusBarBorderColor;
+			context.SetSourceColor (Styles.StatusBarBorderColor);
 			context.StrokePreserve ();
 		}
 
@@ -215,7 +216,7 @@ namespace MonoDevelop.Components.MainToolbar
 				lg.AddColorStop (0, Styles.StatusBarFill1Color);
 				lg.AddColorStop (1, Styles.StatusBarFill4Color);
 
-				context.Pattern = lg;
+				context.SetSource (lg);
 				context.FillPreserve ();
 			}
 
@@ -229,7 +230,7 @@ namespace MonoDevelop.Components.MainToolbar
 				rg.AddColorStop (1, Styles.WithAlpha (Styles.StatusBarFill1Color, 0));
 
 				context.Scale (region.Width / (double)region.Height, 1.0);
-				context.Pattern = rg;
+				context.SetSource (rg);
 				context.Fill ();
 			}
 			context.Restore ();
@@ -240,7 +241,7 @@ namespace MonoDevelop.Components.MainToolbar
 
 				LayoutRoundedRectangle (context, region, 0, -1);
 				context.LineWidth = 1;
-				context.Pattern = lg;
+				context.SetSource (lg);
 				context.Stroke ();
 			}
 
@@ -250,7 +251,7 @@ namespace MonoDevelop.Components.MainToolbar
 
 				LayoutRoundedRectangle (context, region, 0, -2);
 				context.LineWidth = 1;
-				context.Pattern = lg;
+				context.SetSource (lg);
 				context.Stroke ();
 			}
 
@@ -260,15 +261,15 @@ namespace MonoDevelop.Components.MainToolbar
 		void DrawErrorAnimation (Cairo.Context context, StatusArea.RenderArg arg)
 		{
 			const int surfaceWidth = 2000;
-			float opacity;
+			double opacity;
 			int progress;
 
 			if (arg.ErrorAnimationProgress < .5f) {
 				progress = (int) (arg.ErrorAnimationProgress * arg.Allocation.Width * 2.4);
-				opacity = 1.0f;
+				opacity = 1.0d;
 			} else {
 				progress = (int) (arg.ErrorAnimationProgress * arg.Allocation.Width * 2.4);
-				opacity = 1.0f - (arg.ErrorAnimationProgress - .5f) * 2;
+				opacity = 1.0d - (arg.ErrorAnimationProgress - .5d) * 2;
 			}
 
 			LayoutRoundedRectangle (context, arg.Allocation);
@@ -277,7 +278,7 @@ namespace MonoDevelop.Components.MainToolbar
 			context.CachedDraw (surface: ref errorSurface,
 			                    position: new Gdk.Point (arg.Allocation.X - surfaceWidth + progress, arg.Allocation.Y),
 			                    size: new Gdk.Size (surfaceWidth, arg.Allocation.Height),
-			                    opacity: opacity,
+			                    opacity: (float)opacity,
 			                    draw: (c, o) => {
 				// The smaller the pixel range of our gradient the less error there will be in it.
 				using (var lg = new LinearGradient (surfaceWidth - 250, 0, surfaceWidth, 0)) {
@@ -286,7 +287,7 @@ namespace MonoDevelop.Components.MainToolbar
 					lg.AddColorStop (0.88, Styles.WithAlpha (Styles.StatusBarErrorColor, 0.30 * o));
 					lg.AddColorStop (1.00, Styles.WithAlpha (Styles.StatusBarErrorColor, 0.00 * o));
 
-					c.Pattern = lg;
+					c.SetSource (lg);
 					c.Paint ();
 				}
 			});
@@ -299,12 +300,12 @@ namespace MonoDevelop.Components.MainToolbar
 			context.Clip ();
 
 			LayoutRoundedRectangle (context, bounding);
-			context.Color = Styles.WithAlpha (Styles.StatusBarProgressBackgroundColor, Styles.StatusBarProgressBackgroundColor.A * arg.ProgressBarAlpha);
+			context.SetSourceColor (Styles.WithAlpha (Styles.StatusBarProgressBackgroundColor, Styles.StatusBarProgressBackgroundColor.A * arg.ProgressBarAlpha));
 			context.FillPreserve ();
 
 			context.ResetClip ();
 
-			context.Color = Styles.WithAlpha (Styles.StatusBarProgressOutlineColor, Styles.StatusBarProgressOutlineColor.A * arg.ProgressBarAlpha);
+			context.SetSourceColor (Styles.WithAlpha (Styles.StatusBarProgressOutlineColor, Styles.StatusBarProgressOutlineColor.A * arg.ProgressBarAlpha));
 			context.LineWidth = 1;
 			context.Stroke ();
 		}
@@ -343,7 +344,7 @@ namespace MonoDevelop.Components.MainToolbar
 
 			// Subtract off remainder instead of drop to prefer higher centering when centering an odd number of pixels
 			context.MoveTo (x, y - h / 2 - (h % 2));
-			context.Color = Styles.WithAlpha (FontColor (), opacity);
+			context.SetSourceColor (Styles.WithAlpha (FontColor (), opacity));
 
 			Pango.CairoHelper.ShowLayout (context, pl);
 			pl.Dispose ();

@@ -34,6 +34,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using Cairo;
 using MonoDevelop.Components;
+using Xwt.Motion;
 
 namespace MonoDevelop.Ide.Gui
 {
@@ -233,18 +234,20 @@ namespace MonoDevelop.Ide.Gui
 				PageRemoved (this, EventArgs.Empty);
 		}
 
-		internal void ReorderTab (DockNotebookTab tab, DockNotebookTab targetTabPosition)
+		internal void ReorderTab (DockNotebookTab tab, DockNotebookTab targetTab)
 		{
-			if (tab == targetTabPosition)
+			if (tab == targetTab)
 				return;
-			if (tab.Index > targetTabPosition.Index) {
+			int targetPos = targetTab.Index;
+			if (tab.Index > targetTab.Index) {
 				pages.RemoveAt (tab.Index);
-				pages.Insert (targetTabPosition.Index, tab);
+				pages.Insert (targetPos, tab);
 			} else {
-				pages.Insert (targetTabPosition.Index + 1, tab);
+				pages.Insert (targetPos + 1, tab);
 				pages.RemoveAt (tab.Index);
 			}
-			UpdateIndexes (0);
+			IdeApp.Workbench.ReorderDocuments (tab.Index, targetPos);
+			UpdateIndexes (Math.Min (tab.Index, targetPos));
 			tabStrip.Update ();
 		}
 
@@ -289,7 +292,7 @@ namespace MonoDevelop.Ide.Gui
 		bool Dirty { get; set; }
 	}
 
-	internal class DockNotebookTab: IDockNotebookTab, Animatable
+	internal class DockNotebookTab: IDockNotebookTab, IAnimatable
 	{
 		DockNotebook notebook;
 		TabStrip strip;
@@ -306,15 +309,18 @@ namespace MonoDevelop.Ide.Gui
 
 		public bool Notify { get; set; }
 
-		public float WidthModifier { get; set; }
+		public double WidthModifier { get; set; }
 
-		public float Opacity { get; set; }
+		public double Opacity { get; set; }
 
-		public float GlowStrength { get; set; }
+		public double GlowStrength { get; set; }
 
 		public bool Hidden { get; set; }
 
-		public float DirtyStrength { get; set; }
+		public double DirtyStrength { get; set; }
+		
+		void IAnimatable.BatchBegin () { }
+		void IAnimatable.BatchCommit () { QueueDraw (); }
 
 		bool dirty;
 		public bool Dirty {
@@ -382,7 +388,7 @@ namespace MonoDevelop.Ide.Gui
 		}
 
 		internal Gdk.Rectangle SavedAllocation { get; private set; }
-		internal float SaveStrength { get; set; }
+		internal double SaveStrength { get; set; }
 
 		internal void SaveAllocation ()
 		{
@@ -400,7 +406,7 @@ namespace MonoDevelop.Ide.Gui
 		public DockNotebookTab Tab { get; set; }
 	}
 
-	class TabStrip: EventBox, Animatable
+	class TabStrip: EventBox, Xwt.Motion.IAnimatable
 	{
 		List<Gtk.Widget> children = new List<Widget> ();
 		DockNotebook notebook;
@@ -414,7 +420,7 @@ namespace MonoDevelop.Ide.Gui
 		bool draggingTab;
 		int dragX;
 		int dragOffset;
-		float dragXProgress;
+		double dragXProgress;
 
 		int renderOffset;
 		int targetOffset;
@@ -454,10 +460,10 @@ namespace MonoDevelop.Ide.Gui
 				targetWidth = value;
 				if (TabWidth != value) {
 					this.Animate ("TabWidth",
-					              easing: Easing.CubicOut,
-					              start: TabWidth,
-					              end: value,
-					              callback: f => TabWidth = (int) f);
+					              f => TabWidth = (int) f,
+					              TabWidth,
+					              value,
+					              easing: Easing.CubicOut);
 				}
 			}
 		}
@@ -518,12 +524,15 @@ namespace MonoDevelop.Ide.Gui
 
 			closingTabs = new Dictionary<int, DockNotebookTab> ();
 		}
+		
+		void IAnimatable.BatchBegin () { }
+		void IAnimatable.BatchCommit () { QueueDraw (); }
 
 		public void StartOpenAnimation (DockNotebookTab tab)
 		{
 			tab.WidthModifier = 0;
 			new Animation (f => tab.WidthModifier = f)
-				.Insert (0.0f, 0.2f, new Animation (f => tab.Opacity = f))
+				.AddConcurrent (new Animation (f => tab.Opacity = f), 0.0d, 0.2d)
 				.Commit (tab, "Open", easing: Easing.CubicInOut);
 		}
 
@@ -531,7 +540,7 @@ namespace MonoDevelop.Ide.Gui
 		{
 			closingTabs[tab.Index] = tab;
 			new Animation (f => tab.WidthModifier = f, tab.WidthModifier, 0)
-				.Insert (0.8f, 1.0f, new Animation (f => tab.Opacity = f, tab.Opacity, 0))
+				.AddConcurrent (new Animation (f => tab.Opacity = f, tab.Opacity, 0), 0.8d, 1.0d)
 				.Commit (tab, "Closing", 
 					     easing: Easing.CubicOut,
 					     finished: (f, a) => { if (!a) closingTabs.Remove (tab.Index); });
@@ -540,8 +549,13 @@ namespace MonoDevelop.Ide.Gui
 		protected override void ForAll (bool include_internals, Callback callback)
 		{
 			base.ForAll (include_internals, callback);
-			foreach (var c in children)
+			foreach (var c in children.ToArray ())
 				callback (c);
+		}
+
+		protected override void OnRemoved (Widget widget)
+		{
+			children.Remove (widget);
 		}
 
 		protected override void OnSizeAllocated (Gdk.Rectangle allocation)
@@ -635,7 +649,7 @@ namespace MonoDevelop.Ide.Gui
 				// If the user clicks and drags on the 'x' which closes the current
 				// tab we can end up with a null tab here
 				if (t == null)
-					return base.OnMotionNotifyEvent (evnt);;
+					return base.OnMotionNotifyEvent (evnt);
 				SetHighlightedTab (t);
 
 				var newOver = IsOverCloseButton (t, (int)evnt.X, (int)evnt.Y);
@@ -674,8 +688,8 @@ namespace MonoDevelop.Ide.Gui
 
 					t.Animate ("TabMotion",
 					           f => t.SaveStrength = f,
-					           start: 1.0f,
-					           end: 0.0f,
+					           1.0f,
+					           0.0f,
 					           easing: Easing.CubicInOut);
 				}
 				lastDragX = (int)evnt.X;
@@ -742,10 +756,10 @@ namespace MonoDevelop.Ide.Gui
 			allowDoubleClick = true;
 			if (dragX != 0)
 				this.Animate ("EndDrag",
+				              f => dragXProgress = f,
+				              1.0d,
+				              0.0d,
 				              easing: Easing.CubicOut,
-				              start: 1.0f,
-				              end: 0.0f,
-				              callback: f => dragXProgress = f,
 				              finished: (f, a) => draggingTab = false);
 			QueueDraw ();
 			return base.OnButtonReleaseEvent (evnt);
@@ -827,14 +841,14 @@ namespace MonoDevelop.Ide.Gui
 			using (Cairo.LinearGradient gr = new LinearGradient (0, 0, 0, h)) {
 				gr.AddColorStop (0, Styles.TabBarGradientStartColor);
 				gr.AddColorStop (1, Styles.TabBarGradientMidColor);
-				ctx.Pattern = gr;
+				ctx.SetSource (gr);
 				ctx.Fill ();
 			}
 			
 			ctx.MoveTo (region.X, 0.5);
 			ctx.LineTo (region.Right + 1, 0.5);
 			ctx.LineWidth = 1;
-			ctx.Color = Styles.TabBarGradientShadowColor;
+			ctx.SetSourceColor (Styles.TabBarGradientShadowColor);
 			ctx.Stroke ();
 		}
 
@@ -933,7 +947,7 @@ namespace MonoDevelop.Ide.Gui
 			// Draw breadcrumb bar header
 			if (notebook.Tabs.Count > 0) {
 				ctx.Rectangle (0, allocation.Height - BottomBarPadding, allocation.Width, BottomBarPadding);
-				ctx.Color = Styles.BreadcrumbBackgroundColor;
+				ctx.SetSourceColor (Styles.BreadcrumbBackgroundColor);
 				ctx.Fill ();
 			}
 
@@ -962,10 +976,10 @@ namespace MonoDevelop.Ide.Gui
 			if (hovered) {
 				double radius = 6;
 				context.Arc (center.X, center.Y, radius, 0, Math.PI * 2);
-				context.Color = new Cairo.Color (.6, .6, .6, opacity);
+				context.SetSourceRGBA (.6, .6, .6, opacity);
 				context.Fill ();
 
-				context.Color = new Cairo.Color (0.95, 0.95, 0.95, opacity);
+				context.SetSourceRGBA (0.95, 0.95, 0.95, opacity);
 				context.LineWidth = 2;
 
 				context.MoveTo (center.X - 3, center.Y - 3);
@@ -984,7 +998,7 @@ namespace MonoDevelop.Ide.Gui
 				context.LineTo (center.X + 3, center.Y - 3 * heightMod);
 				
 				context.LineWidth = 2;
-				context.Color = new Cairo.Color (lineColor, lineColor, lineColor, opacity);
+				context.SetSourceRGBA (lineColor, lineColor, lineColor, opacity);
 				context.Stroke ();
 				
 				if (animationProgress > 0.5) {
@@ -993,7 +1007,7 @@ namespace MonoDevelop.Ide.Gui
 					context.LineTo (center.X + 3, center.Y);
 					
 					context.LineWidth = 2 - partialProg;
-					context.Color = new Cairo.Color (lineColor, lineColor, lineColor, opacity);
+					context.SetSourceRGBA (lineColor, lineColor, lineColor, opacity);
 					context.Stroke ();
 					
 					
@@ -1001,7 +1015,7 @@ namespace MonoDevelop.Ide.Gui
 
 					// Background
 					context.Arc (center.X, center.Y, radius, 0, Math.PI * 2);
-					context.Color = new Cairo.Color (fillColor, fillColor, fillColor, opacity);
+					context.SetSourceRGBA (fillColor, fillColor, fillColor, opacity);
 					context.Fill ();
 
 					// Inset shadow
@@ -1009,13 +1023,13 @@ namespace MonoDevelop.Ide.Gui
 						context.Arc (center.X, center.Y + 1, radius, 0, Math.PI * 2);
 						lg.AddColorStop (0, new Cairo.Color (0, 0, 0, 0.2 * opacity));
 						lg.AddColorStop (1, new Cairo.Color (0, 0, 0, 0));
-						context.Pattern = lg;
+						context.SetSource (lg);
 						context.Stroke ();
 					}
 
 					// Outline
 					context.Arc (center.X, center.Y, radius, 0, Math.PI * 2);
-					context.Color = new Cairo.Color (lineColor, lineColor, lineColor, opacity);
+					context.SetSourceRGBA (lineColor, lineColor, lineColor, opacity);
 					context.Stroke ();
 
 				}
@@ -1036,22 +1050,23 @@ namespace MonoDevelop.Ide.Gui
 			ctx.LineWidth = 1;
 			LayoutTabBorder (ctx, allocation, tabBounds.Width, tabBounds.X, 0, active);
 			ctx.ClosePath ();
-			Cairo.LinearGradient gr = new LinearGradient (tabBounds.X, TopBarPadding, tabBounds.X, allocation.Bottom);
-			if (active) {
-				gr.AddColorStop (0, Styles.BreadcrumbGradientStartColor.MultiplyAlpha (tab.Opacity));
-				gr.AddColorStop (1, Styles.BreadcrumbBackgroundColor.MultiplyAlpha (tab.Opacity));
-			} else {
-				gr.AddColorStop (0, CairoExtensions.ParseColor ("f4f4f4").MultiplyAlpha (tab.Opacity));
-				gr.AddColorStop (1, CairoExtensions.ParseColor ("cecece").MultiplyAlpha (tab.Opacity));
+			using (LinearGradient gr = new LinearGradient (tabBounds.X, TopBarPadding, tabBounds.X, allocation.Bottom)) {
+				if (active) {
+					gr.AddColorStop (0, Styles.BreadcrumbGradientStartColor.MultiplyAlpha (tab.Opacity));
+					gr.AddColorStop (1, Styles.BreadcrumbBackgroundColor.MultiplyAlpha (tab.Opacity));
+				} else {
+					gr.AddColorStop (0, CairoExtensions.ParseColor ("f4f4f4").MultiplyAlpha (tab.Opacity));
+					gr.AddColorStop (1, CairoExtensions.ParseColor ("cecece").MultiplyAlpha (tab.Opacity));
+				}
+				ctx.SetSource (gr);
 			}
-			ctx.Pattern = gr;
 			ctx.Fill ();
 			
-			ctx.Color = new Cairo.Color (1, 1, 1, .5).MultiplyAlpha (tab.Opacity);
+			ctx.SetSourceColor (new Cairo.Color (1, 1, 1, .5).MultiplyAlpha (tab.Opacity));
 			LayoutTabBorder (ctx, allocation, tabBounds.Width, tabBounds.X, 1, active);
 			ctx.Stroke ();
 
-			ctx.Color = Styles.BreadcrumbBorderColor.MultiplyAlpha (tab.Opacity);
+			ctx.SetSourceColor (Styles.BreadcrumbBorderColor.MultiplyAlpha (tab.Opacity));
 			LayoutTabBorder (ctx, allocation, tabBounds.Width, tabBounds.X, 0, active);
 			ctx.StrokePreserve ();
 
@@ -1061,7 +1076,7 @@ namespace MonoDevelop.Ide.Gui
 					rg.AddColorStop (0, new Cairo.Color (1, 1, 1, 0.4 * tab.Opacity * tab.GlowStrength));
 					rg.AddColorStop (1, new Cairo.Color (1, 1, 1, 0));
 					
-					ctx.Pattern = rg;
+					ctx.SetSource (rg);
 					ctx.Fill ();
 				}
 			} else {
@@ -1098,7 +1113,7 @@ namespace MonoDevelop.Ide.Gui
 				lg.AddColorStop (0, color);
 				color.A = 0;
 				lg.AddColorStop (1, color);
-				ctx.Pattern = lg;
+				ctx.SetSource (lg);
 				Pango.CairoHelper.ShowLayoutLine (ctx, la.GetLine (0));
 			}
 			la.Dispose ();

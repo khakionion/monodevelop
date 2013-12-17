@@ -287,6 +287,7 @@ namespace MonoDevelop.VersionControl
 			TestCommand(Commands.Log, item);
 		}
 		
+		[AllowMultiSelection]
 		[CommandHandler (Commands.Status)]
 		protected void OnStatus() {
 			RunCommand(Commands.Status, false);
@@ -295,16 +296,6 @@ namespace MonoDevelop.VersionControl
 		[CommandUpdateHandler (Commands.Status)]
 		protected void UpdateStatus(CommandInfo item) {
 			TestCommand(Commands.Status, item);
-		}
-		
-		[CommandHandler (Commands.Commit)]
-		protected void OnCommit() {
-			RunCommand (Commands.Commit, false);
-		}
-		
-		[CommandUpdateHandler (Commands.Commit)]
-		protected void UpdateCommit (CommandInfo item) {
-			TestCommand(Commands.Commit, item);
 		}
 		
 		[AllowMultiSelection]
@@ -343,12 +334,12 @@ namespace MonoDevelop.VersionControl
 		[AllowMultiSelection]
 		[CommandHandler (Commands.Revert)]
 		protected void OnRevert() {
-			RunCommand(Commands.Revert, false);
+			RunCommand(Commands.Revert, false, false);
 		}
 		
 		[CommandUpdateHandler (Commands.Revert)]
 		protected void UpdateRevert(CommandInfo item) {
-			TestCommand(Commands.Revert, item);
+			TestCommand(Commands.Revert, item, false);
 		}
 		
 		[AllowMultiSelection]
@@ -394,21 +385,68 @@ namespace MonoDevelop.VersionControl
 		protected void UpdateCreatePatch(CommandInfo item) {
 			TestCommand(Commands.CreatePatch, item);
 		}
-			
-		private void TestCommand(Commands cmd, CommandInfo item) {
-			TestResult res = RunCommand(cmd, true);
+
+		[AllowMultiSelection]
+		[CommandHandler (Commands.Ignore)]
+		protected void OnIgnore ()
+		{
+			RunCommand(Commands.Ignore, false);
+		}
+
+		[CommandUpdateHandler (Commands.Ignore)]
+		protected void UpdateIgnore (CommandInfo item)
+		{
+			TestCommand(Commands.Ignore, item);
+		}
+
+		[AllowMultiSelection]
+		[CommandHandler (Commands.Unignore)]
+		protected void OnUnignore ()
+		{
+			RunCommand(Commands.Unignore, false);
+		}
+
+		[CommandUpdateHandler (Commands.Unignore)]
+		protected void UpdateUnignore (CommandInfo item)
+		{
+			TestCommand(Commands.Unignore, item);
+		}
+
+		[CommandHandler (Commands.ResolveConflicts)]
+		protected void OnResolveConflicts ()
+		{
+			RunCommand (Commands.ResolveConflicts, false, false);
+		}
+
+		[CommandUpdateHandler (Commands.ResolveConflicts)]
+		protected void UpdateResolveConflicts (CommandInfo item)
+		{
+			if (!(CurrentNode.DataItem is UnknownSolutionItem)) {
+				item.Visible = false;
+				return;
+			}
+
+			TestCommand (Commands.ResolveConflicts, item, false);
+		}
+
+		private void TestCommand(Commands cmd, CommandInfo item, bool projRecurse = true)
+		{
+			TestResult res = RunCommand(cmd, true, projRecurse);
 			if (res == TestResult.NoVersionControl && cmd == Commands.Log) {
 				// Use the update command to show the "not available" message
 				item.Icon = null;
 				item.Enabled = false;
-				item.Text = GettextCatalog.GetString ("This project or folder is not under version control");
+				if (VersionControlService.IsGloballyDisabled)
+					item.Text = GettextCatalog.GetString ("Version Control support is disabled");
+				else
+					item.Text = GettextCatalog.GetString ("This project or folder is not under version control");
 			} else
 				item.Visible = res == TestResult.Enable;
 		}
 		
-		private TestResult RunCommand (Commands cmd, bool test)
+		private TestResult RunCommand (Commands cmd, bool test, bool projRecurse = true)
 		{
-			VersionControlItemList items = GetItems ();
+			VersionControlItemList items = GetItems (projRecurse);
 
 			foreach (VersionControlItem it in items) {
 				if (it.Repository == null) {
@@ -433,10 +471,7 @@ namespace MonoDevelop.VersionControl
 					res = LogCommand.Show (items, test);
 					break;
 				case Commands.Status:
-					res = StatusView.Show (items, test);
-					break;
-				case Commands.Commit:
-					res = CommitCommand.Commit (items, test);
+					res = StatusView.Show (items, test, false);
 					break;
 				case Commands.Add:
 					res = AddCommand.Add (items, test);
@@ -463,6 +498,15 @@ namespace MonoDevelop.VersionControl
 					break;
 				case Commands.CreatePatch:
 					res = CreatePatchCommand.CreatePatch (items, test);
+					break;
+				case Commands.Ignore:
+					res = IgnoreCommand.Ignore (items, test);
+					break;
+				case Commands.Unignore:
+					res = UnignoreCommand.Unignore (items, test);
+					break;
+				case Commands.ResolveConflicts:
+					res = ResolveConflictsCommand.ResolveConflicts (items, test);
 					break;
 				}
 			}

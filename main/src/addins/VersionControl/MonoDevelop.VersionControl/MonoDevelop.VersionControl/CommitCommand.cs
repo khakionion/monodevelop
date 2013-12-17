@@ -9,30 +9,6 @@ namespace MonoDevelop.VersionControl
 {
 	class CommitCommand
 	{
-		public static bool Commit (VersionControlItemList items, bool test)
-		{
-			if (items.Count != 1)
-				return false;
-
-			VersionControlItem item = items [0];
-			if (item.VersionInfo.CanCommit) {
-				if (test) return true;
-				ChangeSet cset  = item.Repository.CreateChangeSet (item.Path);
-				cset.GlobalComment = VersionControlService.GetCommitComment (cset.BaseLocalPath);
-				
-				foreach (VersionInfo vi in item.Repository.GetDirectoryVersionInfo (item.Path, false, true))
-					if (vi.HasLocalChanges)
-						cset.AddFile (vi);
-				if (!cset.IsEmpty) {
-					Commit (item.Repository, cset, false);
-				} else {
-					MessageService.ShowMessage (GettextCatalog.GetString ("There are no changes to be committed."));
-					return false;
-				}
-			}
-			return false;
-		}
-		
 		public static bool Commit (Repository vc, ChangeSet changeSet, bool test)
 		{
 			try {
@@ -43,7 +19,8 @@ namespace MonoDevelop.VersionControl
 				}
 				
 				if (vc.GetVersionInfo (changeSet.BaseLocalPath).CanCommit) {
-					if (test) return true;
+					if (test)
+						return true;
 
 					if (!VersionControlService.NotifyPrepareCommit (vc, changeSet))
 						return false;

@@ -15,6 +15,7 @@ using MonoDevelop.Ide;
 using MonoDevelop.Ide.Gui;
 using Mono.TextEditor;
 using MonoDevelop.Components;
+using System.Text;
 
 namespace MonoDevelop.VersionControl.Views
 {
@@ -80,6 +81,7 @@ namespace MonoDevelop.VersionControl.Views
 		bool updatingComment;
 		ChangeSet changeSet;
 		bool firstLoad = true;
+		VersionControlItemList fileList;
 		
 		const int ColIcon = 0;
 		const int ColStatus = 1;
@@ -99,33 +101,31 @@ namespace MonoDevelop.VersionControl.Views
 		
 		delegate void DiffDataHandler (List<DiffData> diffdata);
 		
-		public static bool Show (VersionControlItemList items, bool test)
+		public static bool Show (VersionControlItemList items, bool test, bool solution)
 		{
-			if (items.Count != 1)
-				return false;
+			FilePath path = items.FindMostSpecificParent ();
+			bool isSingleDirectory = false;
 
-			VersionControlItem item = items [0];
-			if (item.VersionInfo.IsVersioned) {
-				if (test) return true;
-				string path = item.Path;
-				if (Services.ProjectService.IsSolutionItemFile (item.Path.FullPath))
-					path = IdeApp.Workspace.FindSolutionItem (item.Path.FullPath).BaseDirectory;
-				else if (Services.ProjectService.IsWorkspaceItemFile (item.Path.FullPath))
-					path = IdeApp.Workspace.GetAllItems <WorkspaceItem> ().First (x => x.FileName.FullPath == item.Path.FullPath).BaseDirectory;
-				StatusView d = new StatusView (path, item.Repository);
-				IdeApp.Workbench.OpenDocument (d, true);
+			if (!path.IsDirectory)
+				path = path.ParentDirectory;
+			else if (items.Count == 1)
+				isSingleDirectory = true;
+
+			if (items.Any (v => v.VersionInfo.IsVersioned)) {
+				if (test)
+					return true;
+
+				if (!BringStatusViewToFront (path)) {
+					StatusView d = new StatusView (path, items [0].Repository, isSingleDirectory || solution ? null : items);
+					IdeApp.Workbench.OpenDocument (d, true);
+				}
 				return true;
 			}
 			return false;
 		}
-		
-		public StatusView (string filepath, Repository vc) 
-			: base(Path.GetFileName(filepath) + " Status") 
+
+		void Init ()
 		{
-			this.vc = vc;
-			this.filepath = filepath;
-			changeSet = vc.CreateChangeSet (filepath);
-			
 			main = new VBox(false, 6);
 			widget = main;
 			
@@ -270,6 +270,20 @@ namespace MonoDevelop.VersionControl.Views
 			StartUpdate();
 		}
 
+		public StatusView (string filepath, Repository vc, VersionControlItemList list)
+			: base (Path.GetFileName (filepath) + " Status")
+		{
+			this.vc = vc;
+			this.filepath = Directory.Exists (filepath) ? filepath : Path.GetDirectoryName (filepath);
+
+			fileList = list;
+			if (list != null)
+				firstLoad = false;
+
+			changeSet = vc.CreateChangeSet (filepath);
+			Init ();
+		}
+
 		protected override void OnWorkbenchWindowChanged (EventArgs e)
 		{
 			base.OnWorkbenchWindowChanged (e);
@@ -401,7 +415,7 @@ namespace MonoDevelop.VersionControl.Views
 			}
 		}
 		
-		private void StartUpdate ()
+		void StartUpdate ()
 		{
 			if (!remoteStatus)
 				status.Text = GettextCatalog.GetString ("Scanning for changes...");
@@ -414,10 +428,23 @@ namespace MonoDevelop.VersionControl.Views
 			
 			showRemoteStatus.Sensitive = false;
 			buttonCommit.Sensitive = false;
-			
+
 			ThreadPool.QueueUserWorkItem (delegate {
+				if (fileList != null) {
+					var group = fileList.GroupBy (v => v.IsDirectory || v.WorkspaceObject is SolutionItem);
+					foreach (var item in group) {
+						// Is directory.
+						if (item.Key) {
+							foreach (var directory in item)
+								changeSet.AddFiles (vc.GetDirectoryVersionInfo (directory.Path, remoteStatus, true));
+						} else
+							changeSet.AddFiles (item.Select (v => v.VersionInfo).ToArray ());
+					}
+					changeSet.AddFiles (fileList.Where (v => !v.IsDirectory).Select (v => v.VersionInfo).ToArray ());
+					fileList = null;
+				}
 				List<VersionInfo> newList = new List<VersionInfo> ();
-				newList.AddRange (vc.GetDirectoryVersionInfo(filepath, remoteStatus, true));
+				newList.AddRange (vc.GetDirectoryVersionInfo (filepath, remoteStatus, true));
 				DispatchService.GuiDispatch (delegate {
 					if (!disposed)
 						LoadStatus (newList);
@@ -487,7 +514,7 @@ namespace MonoDevelop.VersionControl.Views
 			commitBox.Visible = filelist.Selection.CountSelectedRows () != 0;
 		}
 		
-		private void Update ()
+		void Update ()
 		{
 			localDiff.Clear ();
 			remoteDiff.Clear ();
@@ -634,10 +661,10 @@ namespace MonoDevelop.VersionControl.Views
 			UpdateSelectionStatus ();
 		}
 		
-		string GetCommitMessage (string file)
+		static string GetCommitMessage (string file)
 		{
 			string txt = VersionControlService.GetCommitComment (file);
-			return txt != null ? txt : String.Empty;
+			return txt ?? String.Empty;
 		}
 		
 		void SetCommitMessage (string file, string text)
@@ -688,12 +715,12 @@ namespace MonoDevelop.VersionControl.Views
 			return null;
 		}
 		
-		private void OnShowRemoteStatusClicked(object src, EventArgs args) {
+		void OnShowRemoteStatusClicked(object src, EventArgs args) {
 			remoteStatus = true;
 			StartUpdate ();
 		}
 		
-		private void OnCommitClicked (object src, EventArgs args)
+		void OnCommitClicked (object src, EventArgs args)
 		{
 			// Nothing to commit
 			if (changeSet.IsEmpty)
@@ -707,13 +734,14 @@ namespace MonoDevelop.VersionControl.Views
 				  AlertButton.Cancel, AlertButton.Proceed) != AlertButton.Proceed)
 					return;
 			}
-			
-			if (!CommitCommand.Commit (vc, changeSet.Clone (), false))
-				return;
+
+			VersionControlService.FileStatusChanged -= OnFileStatusChanged;
+			CommitCommand.Commit (vc, changeSet.Clone (), false);
+			VersionControlService.FileStatusChanged += OnFileStatusChanged;
 		}
 
 		
-		private void OnTestExpandRow (object sender, Gtk.TestExpandRowArgs args)
+		void OnTestExpandRow (object sender, Gtk.TestExpandRowArgs args)
 		{
 			bool filled = (bool) filestore.GetValue (args.Iter, ColFilled);
 			if (!filled) {
@@ -786,7 +814,7 @@ namespace MonoDevelop.VersionControl.Views
 		internal static object ParseCommandId (ExtensionNode codon)
 		{
 			string id = codon.Id;
-			if (id.StartsWith ("@"))
+			if (id.StartsWith ("@", StringComparison.Ordinal))
 				return id.Substring (1);
 			else
 				return id;
@@ -900,7 +928,10 @@ namespace MonoDevelop.VersionControl.Views
 			TreeIter oldStatusIter = TreeIter.Zero;
 			
 			// Locate the file in the status object list
-			for (oldStatusIndex=0; oldStatusIndex<statuses.Count; oldStatusIndex++) {
+			if (statuses == null)
+				return false;
+
+			for (oldStatusIndex = 0; oldStatusIndex < statuses.Count; oldStatusIndex++) {
 				if (statuses [oldStatusIndex].LocalPath == args.FilePath) {
 					found = true;
 					break;
@@ -962,7 +993,7 @@ namespace MonoDevelop.VersionControl.Views
 			return true;
 		}
 		
-		bool FileVisible (VersionInfo vinfo)
+		static bool FileVisible (VersionInfo vinfo)
 		{
 			return vinfo != null && (vinfo.HasLocalChanges || vinfo.HasRemoteChanges);
 		}
@@ -1043,6 +1074,39 @@ namespace MonoDevelop.VersionControl.Views
 			} else {
 				rc.InitCell (filelist, true, lines, path);
 			}
+		}
+
+		static bool BringStatusViewToFront (string filepath)
+		{
+			foreach (var doc in IdeApp.Workbench.Documents) {
+				StatusView view = doc.GetContent<StatusView> ();
+				if (view != null && view.filepath == filepath) {
+					doc.Select ();
+					view.StartUpdate ();
+					return true;
+				}
+			}
+			return false;
+		}
+
+		[CommandHandler (MonoDevelop.Ide.Commands.EditCommands.Copy)]
+		protected void OnCopy ()
+		{
+			StringBuilder sb = new StringBuilder ();
+			TreeIter iter;
+			foreach (var p in filelist.Selection.GetSelectedRows ()) {
+				if (!filestore.GetIter (out iter, p))
+					continue;
+
+				string[] data = (string[])filestore.GetValue (iter, ColPath);
+				foreach (var line in data)
+					sb.AppendLine (line);
+			}
+
+			var clipboard = Clipboard.Get (Gdk.Atom.Intern ("CLIPBOARD", false));
+			clipboard.Text = sb.ToString ();
+			clipboard = Clipboard.Get (Gdk.Atom.Intern ("PRIMARY", false));
+			clipboard.Text = sb.ToString ();
 		}
 	}
 
