@@ -18,13 +18,14 @@ if (!$ENV{UNITY_THISISABUILDMACHINE})
 	mkdir "monodevelop";
 	system("tar xvfz MonoDevelop.tar.gz -C monodevelop");
 }
-rmtree "gtk";
-system("unzip dependencies/$gtkFileName.zip");
-system("mv gtk-2.24-bundle-osx gtk");
+#commented out because we appear to no longer depend on a custom version of gtk
+#rmtree "gtk";
+#system("unzip dependencies/$gtkFileName.zip");
+#system("mv gtk-2.24-bundle-osx gtk");
 
-chdir "$root/monodevelop/main/build/MacOSX";
+chdir "main/build/MacOSX";
 # Create MonoDevelop application bundle
-system("make mono-bundle") && die ("Failed to make mono-bundle");
+system("make app") && die ("Failed to make MonoDevelop.app");
 # Archive the app for placement in unity installer
 unlink "$root/MonoDevelop.app.tar.gz", "$root/MonoDevelop.dmg", "MonoDevelop.app.tar.gz";
 system("tar -pczf MonoDevelop.app.tar.gz --exclude=.svn MonoDevelop.app");
