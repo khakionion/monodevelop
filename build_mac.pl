@@ -5,6 +5,7 @@ use File::Basename qw(dirname basename fileparse);
 use File::Spec;
 use File::Copy;
 use File::Path;
+use Getopt::Long;
 
 my $root = "";
 my $nant = "mono --runtime=v4.0.30319 /usr/lib/NAnt/NAnt.exe";
@@ -14,9 +15,23 @@ my $mdRoot = "";
 main();
 
 sub main {
-	die "MonoDevelop for Mac must be built on a Linux machine" if $^O ne "linux";
+	
+	#parse CLI options
+	my $forceMacBuild;
+	my $skipUpdate;
+	my $options = GetOptions("force-mac-build" => \$forceMacBuild, "skip-update" => \$skipUpdate);
+	if(!$forceMacBuild) {
+		die "MonoDevelop for Mac must be built on a Linux machine" if $^O ne "linux";
+	}
+	else {
+		#building on Mac, re-set some variables
+		$ENV{PKG_CONFIG_PATH} = "/Library/Frameworks/Mono.framework/Versions/Current/lib/pkgconfig";
+		$nant = "mono --runtime=v4.0 /usr/local/share/NAnt/bin/NAnt.exe -t:mono-4.0";
+	}
 	get_root();
-	prepare_sources();
+	if(!$skipUpdate) {
+		prepare_sources();
+	}
 	build_monodevelop();
 	build_debugger();
 	# build_monodevelop_hg();
