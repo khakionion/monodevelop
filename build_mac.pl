@@ -12,13 +12,14 @@ my $nant = "mono --runtime=v4.0.30319 /usr/lib/NAnt/NAnt.exe";
 my $mdSource = "";
 my $mdRoot = "";
 
+my $forceMacBuild;
+my $skipUpdate;
+
 main();
 
 sub main {
 	
 	#parse CLI options
-	my $forceMacBuild;
-	my $skipUpdate;
 	my $options = GetOptions("force-mac-build" => \$forceMacBuild, "skip-update" => \$skipUpdate);
 	if(!$forceMacBuild) {
 		die "MonoDevelop for Mac must be built on a Linux machine" if $^O ne "linux";
@@ -160,9 +161,16 @@ sub build_boo_md_addins {
 sub package_monodevelop {
 	system("cp -R $mdRoot/* $root/monodevelop/main/build");
 	chdir "$root/monodevelop";
-	print "Collecting built files so they can be packaged on a mac\n";
+	if(!$forceMacBuild) {
+		print "Collecting built files so they can be packaged on a mac\n";
+	}
 	unlink "MonoDevelop.tar.gz";
 	system("tar cfz MonoDevelop.tar.gz main extras");
-	move "MonoDevelop.tar.gz", "$root";
+	if(!$forceMacBuild) {
+		move "MonoDevelop.tar.gz", "$root";
+	}
+	else {
+		print "Build completed, now run package_mac.pl\n";
+	}
 	chdir "$root";
 }
