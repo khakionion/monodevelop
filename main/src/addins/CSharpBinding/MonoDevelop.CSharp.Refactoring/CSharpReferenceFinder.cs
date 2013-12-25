@@ -304,7 +304,15 @@ namespace MonoDevelop.CSharp.Refactoring
 			foreach (var file in files) {
 				if (monitor != null)
 					monitor.Step (1);
-				string text = Mono.TextEditor.Utils.TextFileUtility.ReadAllText (file);
+				string text;
+				try {
+					if  (!File.Exists (file))
+						continue;
+					text = Mono.TextEditor.Utils.TextFileUtility.ReadAllText (file);
+				} catch (Exception e) {
+					LoggingService.LogError ("Exception while file reading.", e);
+					continue;
+				}
 				if (memberName != null && text.IndexOf (memberName, StringComparison.Ordinal) < 0 &&
 					(keywordName == null || text.IndexOf (keywordName, StringComparison.Ordinal) < 0))
 					continue;

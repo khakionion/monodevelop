@@ -43,16 +43,13 @@
     <Compile Include="StackFrameTests.cs" />
     <Compile Include="MdbStackFrameTests.cs" />
     <Compile Include="SdbStackFrameTests.cs" />
+    <Compile Include="CorEvaluationTests.cs" />
+    <Compile Include="CorStackFrameTests.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\MonoDevelop.Debugger.csproj">
       <Project>{2357AABD-08C7-4808-A495-8FF2D3CDFDB0}</Project>
       <Name>MonoDevelop.Debugger</Name>
-      <Private>False</Private>
-    </ProjectReference>
-    <ProjectReference Include="..\..\..\..\tests\UnitTests\UnitTests.csproj">
-      <Project>{1497D0A8-AFF1-4938-BC22-BE79B358BA5B}</Project>
-      <Name>UnitTests</Name>
       <Private>False</Private>
     </ProjectReference>
     <ProjectReference Include="..\..\..\core\MonoDevelop.Core\MonoDevelop.Core.csproj">

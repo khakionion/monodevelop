@@ -78,7 +78,9 @@ namespace MonoDevelop.CodeIssues
 		static readonly Type[] groupingProviders = {
 			typeof(CategoryGroupingProvider),
 			typeof(ProviderGroupingProvider),
-			typeof(SeverityGroupingProvider)
+			typeof(SeverityGroupingProvider),
+			typeof(ProjectGroupingProvider),
+			typeof(FileGroupingProvider)
 		};
 
 		public CodeIssuePadControl ()
@@ -297,6 +299,9 @@ namespace MonoDevelop.CodeIssues
 
 		void ClearSiblingNodes (TreeNavigator navigator)
 		{
+			if (navigator.CurrentPosition == null)
+				return;
+
 			do {
 				var node = navigator.GetValue (nodeField);
 				if (node != null) {

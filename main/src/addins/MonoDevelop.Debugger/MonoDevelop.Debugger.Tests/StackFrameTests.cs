@@ -24,33 +24,40 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-using System;
 using Mono.Debugging.Client;
 using NUnit.Framework;
 
 namespace MonoDevelop.Debugger.Tests
 {
+	[TestFixture]
 	public abstract class StackFrameTests: DebugTests
 	{
 		DebuggerSession ds;
 		StackFrame frame;
 		
-		public StackFrameTests (string de): base (de)
+		protected StackFrameTests (string de): base (de)
 		{
 		}
-		
-		public override void Setup ()
+
+		[TestFixtureSetUp]
+		public override void SetUp ()
 		{
-			base.Setup ();
+			base.SetUp ();
 			ds = Start ("TestEvaluation");
+			if (ds == null)
+				Assert.Ignore ("Engine not found: {0}", EngineId);
+
 			frame = ds.ActiveThread.Backtrace.GetFrame (0);
 		}
-		
+
+		[TestFixtureTearDown]
 		public override void TearDown ()
 		{
 			base.TearDown ();
-			ds.Exit ();
-			ds.Dispose ();
+			if (ds != null) {
+				ds.Exit ();
+				ds.Dispose ();
+			}
 		}
 		
 		public StackFrame Frame {

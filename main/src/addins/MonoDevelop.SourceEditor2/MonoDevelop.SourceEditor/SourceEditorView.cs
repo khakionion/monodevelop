@@ -692,15 +692,19 @@ namespace MonoDevelop.SourceEditor
 					var writeBom = hadBom;
 					var writeText = Document.Text;
 					if (writeEncoding == null) {
-						writeEncoding = Encoding.UTF8;
-						// Disabled. Shows up in the source control as diff, it's atm confusing for the users to see a change without
-						// changed files.
-						writeBom = false;
-//						writeBom =!Mono.TextEditor.Utils.TextFileUtility.IsASCII (writeText);
+						if (this.encoding != null) {
+							writeEncoding = this.encoding;
+						} else { 
+							writeEncoding = Encoding.UTF8;
+							// Disabled. Shows up in the source control as diff, it's atm confusing for the users to see a change without
+							// changed files.
+							writeBom = false;
+	//						writeBom =!Mono.TextEditor.Utils.TextFileUtility.IsASCII (writeText);
+						}
 					}
 					Mono.TextEditor.Utils.TextFileUtility.WriteText (fileName, writeText, writeEncoding, writeBom);
 				} catch (InvalidEncodingException) {
-					var result = MessageService.AskQuestion (GettextCatalog.GetString ("Can't save file witch current codepage."), 
+					var result = MessageService.AskQuestion (GettextCatalog.GetString ("Can't save file with current codepage."), 
 						GettextCatalog.GetString ("Some unicode characters in this file could not be saved with the current encoding.\nDo you want to resave this file as Unicode ?\nYou can choose another encoding in the 'save as' dialog."),
 						1,
 						AlertButton.Cancel,
@@ -835,9 +839,9 @@ namespace MonoDevelop.SourceEditor
 			else {
 				inLoad = true;
 				if (loadEncoding == null) {
-					text = TextFileUtility.ReadAllText (fileName, out hadBom, out this.encoding);
-				}
-				else {
+					text = TextFileUtility.ReadAllText (fileName, out hadBom, out encoding);
+				} else {
+					encoding = loadEncoding;
 					text = TextFileUtility.ReadAllText (fileName, loadEncoding, out hadBom);
 				}
 				if (reload) {
@@ -911,7 +915,7 @@ namespace MonoDevelop.SourceEditor
 
 		bool warnOverwrite = false;
 		bool inLoad = false;
-		Encoding encoding = null;
+		Encoding encoding;
 		bool hadBom = false;
 
 		internal void ReplaceContent (string fileName, string content, Encoding encoding)
@@ -1776,19 +1780,21 @@ namespace MonoDevelop.SourceEditor
 		
 		public CodeCompletionContext CreateCodeCompletionContext (int triggerOffset)
 		{
-			CodeCompletionContext result = new CodeCompletionContext ();
+			var result = new CodeCompletionContext ();
+			if (widget == null)
+				return result;
+			var editor = widget.TextEditor;
+			if (editor == null)
+				return result;
 			result.TriggerOffset = triggerOffset;
-			DocumentLocation loc = widget.TextEditor.Caret.Location;
+			var loc = editor.Caret.Location;
 			result.TriggerLine = loc.Line;
 			result.TriggerLineOffset = loc.Column - 1;
-/*			var p = new Cairo.Point ((int)this.widget.TextEditor.TextViewMargin.CaretVisualLocation.X,
-			                         (int)this.widget.TextEditor.TextViewMargin.CaretVisualLocation.Y);
-			if (widget.TextEditor.Caret.Location.Column == loc.Column)*/
 			var p = this.widget.TextEditor.LocationToPoint (loc);
 			int tx, ty;
-			widget.TextEditor.ParentWindow.GetOrigin (out tx, out ty);
-			tx += widget.TextEditor.Allocation.X + (int)p.X;
-			ty += widget.TextEditor.Allocation.Y + (int)p.Y + (int)TextEditor.LineHeight;
+			editor.ParentWindow.GetOrigin (out tx, out ty);
+			tx += editor.Allocation.X + p.X;
+			ty += editor.Allocation.Y + p.Y + (int)editor.LineHeight;
 
 			result.TriggerXCoord = tx;
 			result.TriggerYCoord = ty;
@@ -2438,7 +2444,7 @@ namespace MonoDevelop.SourceEditor
 		[CommandUpdateHandler (SearchCommands.FindPrevious)]
 		void UpdateFindNextAndPrev (CommandInfo cinfo)
 		{
-			cinfo.Enabled = !string.IsNullOrEmpty (widget.TextEditor.SearchPattern);
+			cinfo.Enabled = !string.IsNullOrEmpty (SearchAndReplaceOptions.SearchPattern);
 		}
 
 		[CommandHandler (SearchCommands.FindPrevious)]

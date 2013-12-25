@@ -433,7 +433,7 @@ namespace MonoDevelop.NUnit
 						RuntimeErrorCleanup (testContext, localMonitor.RunningTest, ex);
 					} else {
 						testContext.Monitor.ReportRuntimeError (null, ex);
-						throw ex;
+						throw;
 					}
 					result = UnitTestResult.CreateFailure (ex);
 				} else {
@@ -472,9 +472,9 @@ namespace MonoDevelop.NUnit
 					cmd.Arguments += " ";
 				cmd.Arguments += "\"-xml=" + outFile + "\" " + AssemblyPath;
 
-				bool automaticUpdates = cmd.Command.Contains ("GuiUnit") || (cmd.Command.Contains ("mdtool.exe") && cmd.Arguments.Contains ("run-md-tests"));
+				bool automaticUpdates = cmd.Command != null && (cmd.Command.Contains ("GuiUnit") || (cmd.Command.Contains ("mdtool.exe") && cmd.Arguments.Contains ("run-md-tests")));
 				if (!string.IsNullOrEmpty(pathName))
-					cmd.Arguments += " -run=" + pathName;
+					cmd.Arguments += " -run=" + test.TestId;
 				if (automaticUpdates) {
 					tcpListener = new MonoDevelop.NUnit.External.TcpTestListener (localMonitor, suiteName);
 					cmd.Arguments += " -port=" + tcpListener.Port;

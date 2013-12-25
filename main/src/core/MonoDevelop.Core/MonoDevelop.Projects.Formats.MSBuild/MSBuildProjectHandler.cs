@@ -37,11 +37,9 @@ using MonoDevelop.Core.Serialization;
 using MonoDevelop.Core.Assemblies;
 using MonoDevelop.Projects.Formats.MD1;
 using MonoDevelop.Projects.Extensions;
-using MonoDevelop.Core.Execution;
 using Mono.Addins;
 using System.Linq;
 using MonoDevelop.Core.Instrumentation;
-using System.Text;
 using MonoDevelop.Core.ProgressMonitoring;
 
 namespace MonoDevelop.Projects.Formats.MSBuild
@@ -134,7 +132,9 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 					projectBuilder.Dispose ();
 					projectBuilder = null;
 				}
-				projectBuilder = MSBuildProjectService.GetProjectBuilder (runtime, toolsVersion, item.FileName);
+				var sln = item.ParentSolution;
+				var slnFile = sln != null ? sln.FileName : null;
+				projectBuilder = MSBuildProjectService.GetProjectBuilder (runtime, toolsVersion, item.FileName, slnFile);
 				lastBuildToolsVersion = toolsVersion;
 				lastBuildRuntime = runtime.Id;
 				lastFileName = item.FileName;
@@ -195,7 +195,7 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 		
 		IEnumerable<string> IAssemblyReferenceHandler.GetAssemblyReferences (ConfigurationSelector configuration)
 		{
-			if (UseMSBuildEngineForItem (Item)) {
+			if (UseMSBuildEngineForItem (Item, configuration)) {
 				// Get the references list from the msbuild project
 				SolutionEntityItem item = (SolutionEntityItem) Item;
 				RemoteProjectBuilder builder = GetProjectBuilder ();
@@ -217,10 +217,9 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 		
 		public override BuildResult RunTarget (IProgressMonitor monitor, string target, ConfigurationSelector configuration)
 		{
-			if (UseMSBuildEngineForItem (Item)) {
+			if (UseMSBuildEngineForItem (Item, configuration)) {
 				SolutionEntityItem item = Item as SolutionEntityItem;
 				if (item != null) {
-					
 					LogWriter logWriter = new LogWriter (monitor.Log);
 					RemoteProjectBuilder builder = GetProjectBuilder ();
 					var configs = GetConfigurations (item, configuration);
@@ -278,8 +277,11 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 			//determine the file format
 			MSBuildFileFormat format = null;
 			if (expectedFormat != null) {
-				if (p.ToolsVersion != expectedFormat.ToolsVersion) {
-					monitor.ReportWarning (GettextCatalog.GetString ("Project '{0}' has different ToolsVersion than the containing solution.", Path.GetFileNameWithoutExtension (fileName)));
+				if (!expectedFormat.SupportsToolsVersion (p.ToolsVersion)) {
+					monitor.ReportWarning (GettextCatalog.GetString (
+						"Project '{0}' has a ToolsVersion that does not match the containing solution.",
+						Path.GetFileNameWithoutExtension (fileName)
+					));
 				} else {
 					format = expectedFormat;
 				}
@@ -290,7 +292,7 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 					toolsVersion = "2.0";
 				format = MSBuildFileFormat.GetFormatForToolsVersion (toolsVersion);
 			}
-			this.SetTargetFormat (format);
+			SetTargetFormat (format);
 			
 			timer.Trace ("Read project guids");
 			
@@ -342,9 +344,26 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 		}
 
 		/// <summary>Whether to use the MSBuild engine for the specified item.</summary>
-		internal bool UseMSBuildEngineForItem (SolutionItem item)
+		internal bool UseMSBuildEngineForItem (SolutionItem item, ConfigurationSelector sel, bool checkReferences = true)
 		{
-			return item.UseMSBuildEngine ?? UseMSBuildEngineByDefault;
+			// if the item mandates MSBuild, always use it
+			if (RequireMSBuildEngine)
+				return true;
+			// if the user has set the option, use the setting
+			if (item.UseMSBuildEngine.HasValue)
+				return item.UseMSBuildEngine.Value;
+
+			// If the item type defaults to using MSBuild, only use MSBuild if its direct references also use MSBuild.
+			// This prevents a not-uncommon common error referencing non-MSBuild projects from MSBuild projects
+			// NOTE: This adds about 11ms to the load/build/etc times of the MonoDevelop solution. Doing it recursively
+			// adds well over a second.
+			return UseMSBuildEngineByDefault && (
+				!checkReferences ||
+				item.GetReferencedItems (sel).All (i => {
+					var h = i.ItemHandler as MSBuildProjectHandler;
+					return h != null && h.UseMSBuildEngineForItem (i, sel, false);
+				})
+			);
 		}
 
 		/// <summary>Whether to use the MSBuild engine by default.</summary>
@@ -850,7 +869,6 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 							pref = new ProjectReference (ReferenceType.Package, buildItem.Include);
 							pref.ExtendedProperties ["_OriginalMSBuildReferenceHintPath"] = hintPath;
 						}
-						pref.LocalCopy = !buildItem.GetMetadataIsFalse ("Private");
 					} else {
 						string asm = buildItem.Include;
 						// This is a workaround for a VS bug. Looks like it is writing this assembly incorrectly
@@ -861,8 +879,11 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 						else if (asm == "system")
 							asm = "System";
 						pref = new ProjectReference (ReferenceType.Package, asm);
-						pref.LocalCopy = !buildItem.GetMetadataIsFalse ("Private");
 					}
+					var privateCopy = buildItem.GetBoolMetadata ("Private");
+					if (privateCopy != null)
+						pref.LocalCopy = privateCopy.Value;
+
 					pref.Condition = buildItem.Condition;
 					string specificVersion = buildItem.GetMetadata ("SpecificVersion");
 					if (string.IsNullOrWhiteSpace (specificVersion)) {
@@ -882,8 +903,10 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 					string path = MSBuildProjectService.FromMSBuildPath (project.ItemDirectory, buildItem.Include);
 					string name = Path.GetFileNameWithoutExtension (path);
 					ProjectReference pref = new ProjectReference (ReferenceType.Project, name);
-					pref.LocalCopy = !buildItem.GetMetadataIsFalse ("Private");
 					pref.Condition = buildItem.Condition;
+					var privateCopy = buildItem.GetBoolMetadata ("Private");
+					if (privateCopy != null)
+						pref.LocalCopy = privateCopy.Value;
 					return pref;
 				}
 				else if (dt == null && !string.IsNullOrEmpty (buildItem.Include)) {
@@ -1198,7 +1221,8 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 			
 			if (dotNetProject != null) {
 				var moniker = dotNetProject.TargetFramework.Id;
-				bool supportsMultipleFrameworks = TargetFormat.FrameworkVersions.Length > 0;
+				bool supportsMultipleFrameworks = TargetFormat.SupportsMonikers ||
+					 TargetFormat.SupportedFrameworks.Length > 0;
 				var def = dotNetProject.GetDefaultTargetFrameworkForFormat (GetFileFormat ());
 
 				// If the format only supports one fx version, or the version is the default, there is no need to store it.
@@ -1440,11 +1464,6 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 				}
 				
 				buildItem.SetMetadata ("HintPath", hintPath);
-				
-				if (!pref.LocalCopy && pref.CanSetLocalCopy)
-					buildItem.SetMetadata ("Private", "False");
-				else
-					buildItem.UnsetMetadata ("Private");
 			}
 			else if (pref.ReferenceType == ReferenceType.Package) {
 				string include = pref.StoredReference;
@@ -1462,8 +1481,8 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 				
 				//RequiredTargetFramework is undocumented, maybe only a hint for VS. Only seems to be used for .NETFramework
 				var dnp = pref.OwnerProject as DotNetProject;
-				IList supportedFrameworks = TargetFormat.FrameworkVersions;
-				if (dnp != null && pkg != null
+				IList supportedFrameworks = TargetFormat.SupportedFrameworks;
+				if (supportedFrameworks != null && dnp != null && pkg != null
 					&& dnp.TargetFramework.Id.Identifier == TargetFrameworkMoniker.ID_NET_FRAMEWORK
 					&& pkg.IsFrameworkPackage && supportedFrameworks.Contains (pkg.TargetFramework)
 					&& pkg.TargetFramework.Version != "2.0" && supportedFrameworks.Count > 1)
@@ -1479,11 +1498,6 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 					buildItem.SetMetadata ("HintPath", hintPath);
 				else
 					buildItem.UnsetMetadata ("HintPath");
-				
-				if (!pref.LocalCopy && pref.CanSetLocalCopy)
-					buildItem.SetMetadata ("Private", "False");
-				else
-					buildItem.UnsetMetadata ("Private");
 			}
 			else if (pref.ReferenceType == ReferenceType.Project) {
 				Project refProj = Item.ParentSolution.FindProjectByName (pref.Reference);
@@ -1495,10 +1509,6 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 					else
 						buildItem.UnsetMetadata ("Project");
 					buildItem.SetMetadata ("Name", refProj.Name);
-					if (!pref.LocalCopy)
-						buildItem.SetMetadata ("Private", "False");
-					else
-						buildItem.UnsetMetadata ("Private");
 				} else {
 					monitor.ReportWarning (GettextCatalog.GetString ("Reference to unknown project '{0}' ignored.", pref.Reference));
 					return;
@@ -1509,6 +1519,12 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 				DataType dt = ser.DataContext.GetConfigurationDataType (pref.GetType ());
 				buildItem = AddOrGetBuildItem (msproject, oldItems, dt.Name, pref.Reference);
 			}
+
+			if (pref.LocalCopy != pref.DefaultLocalCopy)
+				buildItem.SetMetadata ("Private", pref.LocalCopy);
+			else
+				buildItem.UnsetMetadata ("Private");
+
 			WriteBuildItemMetadata (ser, buildItem, pref, oldItems);
 			buildItem.Condition = pref.Condition;
 		}

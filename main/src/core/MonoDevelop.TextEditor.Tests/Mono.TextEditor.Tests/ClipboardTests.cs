@@ -69,7 +69,7 @@ namespace Mono.TextEditor.Tests
 		{
 			var data = Create (
 				@"$");
-
+			data.Options.GenerateFormattingUndoStep = true;
 			Clipboard clipboard = Clipboard.Get (Mono.TextEditor.ClipboardActions.CopyOperation.CLIPBOARD_ATOM);
 			clipboard.Text = "hello";
 
@@ -85,9 +85,28 @@ namespace Mono.TextEditor.Tests
 		}
 
 		[Test]
+		public void TestUndoSteps_WithoutFormattingStep ()
+		{
+			var data = Create (
+				@"$");
+			data.Options.GenerateFormattingUndoStep = false;
+			Clipboard clipboard = Clipboard.Get (Mono.TextEditor.ClipboardActions.CopyOperation.CLIPBOARD_ATOM);
+			clipboard.Text = "hello";
+
+			data.TextPasteHandler = this;
+
+			ClipboardActions.Paste (data);
+
+			Check (data, @"Hello World$");
+			MiscActions.Undo (data);
+			Check (data, @"$");
+		}
+
+		[Test]
 		public void TestPasteDoesntInsertVirtualIndent ()
 		{
 			var data = VirtualIndentModeTests.CreateData ("");
+			data.Options.DefaultEolMarker = "\n";
 			data.Caret.Location =  new DocumentLocation (1, data.IndentationTracker.GetVirtualIndentationColumn (1, 1));
 			var clipboard = Clipboard.Get (Mono.TextEditor.ClipboardActions.CopyOperation.CLIPBOARD_ATOM);
 			clipboard.Text = "\n\n";

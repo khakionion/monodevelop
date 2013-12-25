@@ -2,9 +2,6 @@
 	path = main/external/cecil
 	url = git://github.com/mono/cecil.git
 	branch = mono-3.0
-[submodule "main/external/maccore"]
-	path = main/external/maccore
-	url = git://github.com/mono/maccore.git
 [submodule "main/external/mono-tools"]
 	path = main/external/mono-tools
 	url = git://github.com/mono/mono-tools.git
@@ -42,3 +39,6 @@
 	path = main/external/raygun4net
 	url = git://github.com/mono/raygun4net.git
 	branch = xshacks
+[submodule "main/external/sharpsvn-binary"]
+	path = main/external/sharpsvn-binary
+	url = git://github.com/mono/sharpsvn-binary.git

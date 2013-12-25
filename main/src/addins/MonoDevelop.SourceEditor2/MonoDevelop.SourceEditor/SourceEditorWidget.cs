@@ -927,7 +927,7 @@ namespace MonoDevelop.SourceEditor
 					newText.Append (correctEol);
 			}
 			view.StoreSettings ();
-			view.ReplaceContent (Document.FileName, newText.ToString (), null);
+			view.ReplaceContent (Document.FileName, newText.ToString (), view.SourceEncoding);
 			Document.HasLineEndingMismatchOnTextSet = false;
 			view.LoadSettings ();
 		}
@@ -1083,7 +1083,7 @@ namespace MonoDevelop.SourceEditor
 						}
 						TextEditor.GrabFocus ();
 						view.Load (fileName);
-						view.ReplaceContent (fileName, content, null);
+						view.ReplaceContent (fileName, content, view.SourceEncoding);
 						view.WorkbenchWindow.Document.ReparseDocument ();
 						view.IsDirty = true;
 					} catch (Exception ex) {
@@ -1730,6 +1730,18 @@ namespace MonoDevelop.SourceEditor
 			Wave = true;
 			
 			StartCol = Info.Region.BeginColumn;
+			if (line != null) {
+				var startOffset = line.Offset;
+				if (startOffset + StartCol - 1 >= 0) {
+					while (StartCol < line.Length) {
+						char ch = doc.GetCharAt (startOffset + StartCol - 1);
+						if (!char.IsWhiteSpace (ch))
+							break;
+						StartCol++;
+					}
+				}
+			}
+
 			if (Info.Region.EndColumn > StartCol) {
 				EndCol = Info.Region.EndColumn;
 			} else {

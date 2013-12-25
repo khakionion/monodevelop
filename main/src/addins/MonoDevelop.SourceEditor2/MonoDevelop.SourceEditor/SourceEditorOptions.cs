@@ -196,6 +196,9 @@ namespace MonoDevelop.SourceEditor
 				case "EnableQuickDiff":
 					base.EnableQuickDiff = (bool)args.NewValue;
 					break;
+				case "GenerateFormattingUndoStep":
+					base.GenerateFormattingUndoStep = (bool)args.NewValue;
+					break;
 				case "HideObsoleteItems":
 					this.HideObsoleteItems = (bool) args.NewValue;
 					break;
@@ -235,7 +238,7 @@ namespace MonoDevelop.SourceEditor
 			this.EnableHighlightUsages = PropertyService.Get ("EnableHighlightUsages", false);
 			base.DrawIndentationMarkers = PropertyService.Get ("DrawIndentationMarkers", false);
 			this.lineEndingConversion = PropertyService.Get ("LineEndingConversion", LineEndingConversion.Ask);
-			this.generateFormattingUndoStep = PropertyService.Get ("GenerateFormattingUndoStep", false);
+			base.GenerateFormattingUndoStep = PropertyService.Get ("GenerateFormattingUndoStep", false);
 			base.ShowWhitespaces = PropertyService.Get ("ShowWhitespaces", Mono.TextEditor.ShowWhitespaces.Never);
 			base.IncludeWhitespaces = PropertyService.Get ("IncludeWhitespaces", Mono.TextEditor.IncludeWhitespaces.All);
 			base.WrapLines = PropertyService.Get ("WrapLines", false);
@@ -431,19 +434,6 @@ namespace MonoDevelop.SourceEditor
 		}
 		
 
-		bool generateFormattingUndoStep;
-		public bool GenerateFormattingUndoStep {
-			get {
-				return generateFormattingUndoStep;
-			}
-			set {
-				if (value != this.generateFormattingUndoStep) {
-					this.generateFormattingUndoStep = value;
-					PropertyService.Set ("GenerateFormattingUndoStep", value);
-					OnChanged (EventArgs.Empty);
-				}
-			}
-		}
 		#endregion
 		
 		bool useViModes = false;
@@ -693,7 +683,14 @@ namespace MonoDevelop.SourceEditor
 				base.ColorScheme =  newColorScheme;
 			}
 		}
-		
+
+		public override bool GenerateFormattingUndoStep {
+			set {
+				PropertyService.Set ("GenerateFormattingUndoStep", value);
+				base.GenerateFormattingUndoStep = value;
+			}
+		}
+
 		#endregion
 	}
 }
