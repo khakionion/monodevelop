@@ -26,13 +26,14 @@
 
 using System;
 using System.Threading;
-using System.IO;
-using System.Runtime.Serialization.Formatters.Binary;
 using System.Runtime.Remoting;
 using System.Collections.Generic;
-using System.Collections;
 using Microsoft.Build.BuildEngine;
-using Microsoft.Build.Framework;
+using System.Globalization;
+using System.IO;
+
+//this is the builder for the deprecated build engine API
+#pragma warning disable 618
 
 namespace MonoDevelop.Projects.Formats.MSBuild
 {
@@ -42,11 +43,12 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 		static ThreadStart workDelegate;
 		static object workLock = new object ();
 		static Thread workThread;
+		static CultureInfo uiCulture;
 		static Exception workError;
 
 		ManualResetEvent doneEvent = new ManualResetEvent (false);
-		Dictionary<string,Engine> engines = new Dictionary<string, Engine> ();
 		Dictionary<string,string> unsavedProjects = new Dictionary<string, string> ();
+		Engine engine;
 
 		public void Dispose ()
 		{
@@ -57,9 +59,15 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 			get { return doneEvent; }
 		}
 
-		public IProjectBuilder LoadProject (string file, string solutionFile, string binDir)
+		public void Initialize (string slnFile, CultureInfo uiCulture)
 		{
-			return new ProjectBuilder (this, GetEngine (binDir), file, solutionFile);
+			BuildEngine.uiCulture = uiCulture;
+			engine = InitializeEngine (slnFile);
+		}
+
+		public IProjectBuilder LoadProject (string file)
+		{
+			return new ProjectBuilder (this, engine, file);
 		}
 		
 		public void UnloadProject (IProjectBuilder pb)
@@ -73,35 +81,40 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 			return null;
 		}
 
-		Engine GetEngine (string binDir)
+		static Engine InitializeEngine (string slnFile)
 		{
-			Engine engine = null;
-			RunSTA (delegate {
-				if (!engines.TryGetValue (binDir, out engine)) {
-					engine = new Engine (binDir);
-					engine.GlobalProperties.SetProperty ("BuildingInsideVisualStudio", "true");
-					
-					//we don't have host compilers in MD, and this is set to true by some of the MS targets
-					//which causes it to always run the CoreCompile task if BuildingInsideVisualStudio is also
-					//true, because the VS in-process compiler would take care of the deps tracking
-					engine.GlobalProperties.SetProperty ("UseHostCompilerIfAvailable", "false");
-					engines [binDir] = engine;
-				}
-			});
+			var engine = new Engine ();
+			engine.DefaultToolsVersion = MSBuildConsts.Version;
+			var gp = engine.GlobalProperties;
+
+			//this causes build targets to behave how they should inside an IDE, instead of in a command-line process
+			gp.SetProperty ("BuildingInsideVisualStudio", "true");
+
+			//we don't have host compilers in MD, and this is set to true by some of the MS targets
+			//which causes it to always run the CoreCompile task if BuildingInsideVisualStudio is also
+			//true, because the VS in-process compiler would take care of the deps tracking
+			gp.SetProperty ("UseHostCompilerIfAvailable", "false");
+
+			if (string.IsNullOrEmpty (slnFile))
+				return engine;
+
+			gp.SetProperty ("SolutionPath", Path.GetFullPath (slnFile));
+			gp.SetProperty ("SolutionName", Path.GetFileNameWithoutExtension (slnFile));
+			gp.SetProperty ("SolutionFilename", Path.GetFileName (slnFile));
+			gp.SetProperty ("SolutionDir", Path.GetDirectoryName (slnFile) + Path.DirectorySeparatorChar);
+
 			return engine;
 		}
 
-		internal void UnloadProject (string file)
+		internal void UnloadProject (Engine engine, string file, bool releaseEngine)
 		{
 			lock (unsavedProjects)
 				unsavedProjects.Remove (file);
 
 			RunSTA (delegate {
-				foreach (var engine in engines.Values) {
-					var loadedProj = engine.GetLoadedProject (file);
-					if (loadedProj != null)
-						engine.UnloadProject (loadedProj);
-				}
+				var loadedProj = engine.GetLoadedProject (file);
+				if (loadedProj != null)
+					engine.UnloadProject (loadedProj);
 			});
 		}
 
@@ -130,6 +143,7 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 						workThread = new Thread (STARunner);
 						workThread.SetApartmentState (ApartmentState.STA);
 						workThread.IsBackground = true;
+						workThread.CurrentUICulture = uiCulture;
 						workThread.Start ();
 					}
 					else

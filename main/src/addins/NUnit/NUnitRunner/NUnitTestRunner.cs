@@ -149,6 +149,7 @@ namespace MonoDevelop.NUnit.External
 				for (int n=0; n<test.Tests.Count; n++)
 					ti.Tests [n] = BuildTestInfo ((Test)test.Tests [n]);
 			}
+			ti.IsExplicit = test.RunState == RunState.Explicit;
 			return ti;
 		}
 		
@@ -173,6 +174,7 @@ namespace MonoDevelop.NUnit.External
 		public string TestId;
 		public string FixtureTypeName;
 		public string FixtureTypeNamespace;
+		public bool IsExplicit;
 		public NunitTestInfo[] Tests;
 	}
 		

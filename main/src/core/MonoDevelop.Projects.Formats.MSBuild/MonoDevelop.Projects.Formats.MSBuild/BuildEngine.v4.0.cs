@@ -35,6 +35,7 @@ using Microsoft.Build.Framework;
 using Microsoft.Build.Evaluation;
 using Microsoft.Build.Construction;
 using System.Linq;
+using System.Globalization;
 
 namespace MonoDevelop.Projects.Formats.MSBuild
 {
@@ -44,11 +45,14 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 		static ThreadStart workDelegate;
 		static object workLock = new object ();
 		static Thread workThread;
+		static CultureInfo uiCulture;
 		static Exception workError;
 
 		ManualResetEvent doneEvent = new ManualResetEvent (false);
 		Dictionary<string,ProjectCollection> engines = new Dictionary<string, ProjectCollection> ();
 		Dictionary<string, string> unsavedProjects = new Dictionary<string, string> ();
+
+		ProjectCollection engine;
 
 		public void Dispose ()
 		{
@@ -59,9 +63,15 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 			get { return doneEvent; }
 		}
 
-		public IProjectBuilder LoadProject (string file, string solutionFile, string binDir)
+		public void Initialize (string solutionFile, CultureInfo uiCulture)
 		{
-			return new ProjectBuilder (this, GetEngine (binDir), file, solutionFile);
+			BuildEngine.uiCulture = uiCulture;
+			engine = InitializeEngine (solutionFile);
+		}
+
+		public IProjectBuilder LoadProject (string file)
+		{
+			return new ProjectBuilder (this, engine, file);
 		}
 		
 		public void UnloadProject (IProjectBuilder pb)
@@ -90,12 +100,37 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 			return null;
 		}
 
+		static ProjectCollection InitializeEngine (string slnFile)
+		{
+			var engine = new ProjectCollection ();
+			engine.DefaultToolsVersion = MSBuildConsts.Version;
+
+			//this causes build targets to behave how they should inside an IDE, instead of in a command-line process
+			engine.SetGlobalProperty ("BuildingInsideVisualStudio", "true");
+
+			//we don't have host compilers in MD, and this is set to true by some of the MS targets
+			//which causes it to always run the CoreCompile task if BuildingInsideVisualStudio is also
+			//true, because the VS in-process compiler would take care of the deps tracking
+			engine.SetGlobalProperty ("UseHostCompilerIfAvailable", "false");
+
+			if (string.IsNullOrEmpty (slnFile))
+				return engine;
+
+			engine.SetGlobalProperty ("SolutionPath", Path.GetFullPath (slnFile));
+			engine.SetGlobalProperty ("SolutionName", Path.GetFileNameWithoutExtension (slnFile));
+			engine.SetGlobalProperty ("SolutionFilename", Path.GetFileName (slnFile));
+			engine.SetGlobalProperty ("SolutionDir", Path.GetDirectoryName (slnFile) + Path.DirectorySeparatorChar);
+
+			return engine;
+		}
+
 		ProjectCollection GetEngine (string binDir)
 		{
 			ProjectCollection engine = null;
 			RunSTA (delegate {
 				if (!engines.TryGetValue (binDir, out engine)) {
 					engine = new ProjectCollection ();
+					engine.DefaultToolsVersion = MSBuildConsts.Version;
 					engine.SetGlobalProperty ("BuildingInsideVisualStudio", "true");
 					
 					//we don't have host compilers in MD, and this is set to true by some of the MS targets
@@ -150,6 +185,7 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 						workThread = new Thread (STARunner);
 						workThread.SetApartmentState (ApartmentState.STA);
 						workThread.IsBackground = true;
+						workThread.CurrentUICulture = uiCulture;
 						workThread.Start ();
 					}
 					else

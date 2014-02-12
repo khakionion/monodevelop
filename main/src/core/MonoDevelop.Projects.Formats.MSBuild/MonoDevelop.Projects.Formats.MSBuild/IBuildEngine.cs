@@ -25,12 +25,14 @@
 // THE SOFTWARE.
 
 using System;
+using System.Globalization;
 
 namespace MonoDevelop.Projects.Formats.MSBuild
 {
 	public interface IBuildEngine: IDisposable
 	{
-		IProjectBuilder LoadProject (string file, string solutionFile, string binPath);
+		void Initialize (string solutionFile, CultureInfo uiCulture);
+		IProjectBuilder LoadProject (string projectFile);
 		void UnloadProject (IProjectBuilder pb);
 	}
 }

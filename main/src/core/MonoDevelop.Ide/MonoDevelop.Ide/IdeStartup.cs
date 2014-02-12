@@ -50,6 +50,7 @@ using MonoDevelop.Ide.Gui;
 using MonoDevelop.Core.Instrumentation;
 using System.Diagnostics;
 using System.Collections.Generic;
+using MonoDevelop.Ide.Extensions;
 
 namespace MonoDevelop.Ide
 {
@@ -75,7 +76,7 @@ namespace MonoDevelop.Ide
 			LoggingService.LogInfo ("Running on {0}", IdeVersionInfo.GetRuntimeInfo ());
 
 			Counters.Initialization.BeginTiming ();
-			
+
 			if (options.PerfLog) {
 				string logFile = Path.Combine (Environment.CurrentDirectory, "monodevelop.perf-log");
 				LoggingService.LogInfo ("Logging instrumentation service data to file: " + logFile);
@@ -123,6 +124,7 @@ namespace MonoDevelop.Ide
 
 			// Set a synchronization context for the main gtk thread
 			SynchronizationContext.SetSynchronizationContext (new GtkSynchronizationContext ());
+			Runtime.MainSynchronizationContext = SynchronizationContext.Current;
 			
 			AddinManager.AddinLoadError += OnAddinError;
 			
@@ -143,6 +145,9 @@ namespace MonoDevelop.Ide
 			
 			Counters.Initialization.Trace ("Initializing Runtime");
 			Runtime.Initialize (true);
+
+
+			IdeApp.Customizer = options.IdeCustomizer ?? new IdeCustomizer ();
 
 			Counters.Initialization.Trace ("Initializing theme and splash window");
 
@@ -359,6 +364,8 @@ namespace MonoDevelop.Ide
 				return false;
 			}
 
+			LoggingService.LogInfo ("Found GTK# version " + version);
+
 			var path = Path.Combine (location, @"bin");
 			try {
 				if (SetDllDirectory (path)) {
@@ -559,13 +566,15 @@ namespace MonoDevelop.Ide
 			return (int)(hash % 1000);
 		}
 		
-		public static int Main (string[] args)
+		public static int Main (string[] args, IdeCustomizer customizer = null)
 		{
 			var options = MonoDevelopOptions.Parse (args);
 			if (options.ShowHelp || options.Error != null)
 				return options.Error != null? -1 : 0;
 			
 			LoggingService.Initialize (options.RedirectOutput);
+
+			options.IdeCustomizer = customizer;
 
 			int ret = -1;
 			bool retry = false;
@@ -658,6 +667,7 @@ namespace MonoDevelop.Ide
 		public bool RedirectOutput { get; set; }
 		public string Error { get; set; }
 		public IList<string> RemainingArgs { get; set; }
+		public IdeCustomizer IdeCustomizer { get; set; }
 	}
 	
 	public class AddinError
