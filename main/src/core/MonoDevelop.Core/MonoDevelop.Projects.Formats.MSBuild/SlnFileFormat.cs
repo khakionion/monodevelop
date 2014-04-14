@@ -122,13 +122,14 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 				slnData.UpdateVersion (format);
 
 				sw.WriteLine ();
+
 				//Write Header
 				sw.WriteLine ("Microsoft Visual Studio Solution File, Format Version " + slnData.VersionString);
 				sw.WriteLine (slnData.HeaderComment);
 				if (slnData.VisualStudioVersion != null)
-					sw.WriteLine ("VisualStudioVersion = {0}");
+					sw.WriteLine ("VisualStudioVersion = {0}", slnData.VisualStudioVersion);
 				if (slnData.MinimumVisualStudioVersion != null)
-					sw.WriteLine ("MinimumVisualStudioVersion = {0}");
+					sw.WriteLine ("MinimumVisualStudioVersion = {0}", slnData.MinimumVisualStudioVersion);
 
 				//Write the projects
 				monitor.BeginTask (GettextCatalog.GetString ("Saving projects"), 1);
@@ -317,10 +318,6 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 				foreach (SolutionConfigurationEntry cce in cc.Configurations) {
 					SolutionEntityItem p = cce.Item;
 					
-					// Ignore unknown projects. We deal with them below
-					if (p is UnknownSolutionItem)
-						continue;
-					
                     // <ProjectGuid>...</ProjectGuid> in some Visual Studio generated F# project files 
                     // are missing "{"..."}" in their guid. This is not generally a problem since it
                     // is a valid GUID format. However the solution file format requires that these are present. 
@@ -341,11 +338,6 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 				}
 			}
 			
-			// Dump config lines for unknown projects
-			foreach (UnknownSolutionItem item in sol.GetAllSolutionItems<UnknownSolutionItem> ()) {
-				ItemSlnData data = ItemSlnData.ForItem (item);
-				list.AddRange (data.ConfigLines);
-			}
 		}
 
 		void WriteNestedProjects (SolutionFolder folder, SolutionFolder root, StreamWriter writer)
@@ -713,13 +705,19 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 					}
 
 					if (s.StartsWith ("VisualStudioVersion = ", StringComparison.Ordinal)) {
-						var v = Version.Parse (s.Substring ("VisualStudioVersion = ".Length));
-						data.VisualStudioVersion = v;
+						Version v;
+						if (Version.TryParse (s.Substring ("VisualStudioVersion = ".Length), out v))
+							data.VisualStudioVersion = v;
+						else
+							monitor.Log.WriteLine ("Ignoring unparseable VisualStudioVersion value in sln file");
 					}
 
 					if (s.StartsWith ("MinimumVisualStudioVersion = ", StringComparison.Ordinal)) {
-						var v = Version.Parse (s.Substring ("MinimumVisualStudioVersion = ".Length));
-						data.MinimumVisualStudioVersion = v;
+						Version v;
+						if (Version.TryParse (s.Substring ("MinimumVisualStudioVersion = ".Length), out v))
+							data.MinimumVisualStudioVersion = v;
+						else
+							monitor.Log.WriteLine ("Ignoring unparseable MinimumVisualStudioVersion value in sln file");
 					}
 				}
 			}
@@ -755,6 +753,7 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 				string projectName = match.Groups [2].Value;
 				string projectPath = match.Groups [3].Value;
 				string projectGuid = match.Groups [4].Value.ToUpper ();
+				List<string> projLines;
 
 				if (projTypeGuid == MSBuildProjectService.FolderTypeGuid) {
 					//Solution folder
@@ -763,7 +762,7 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 					MSBuildProjectService.InitializeItemHandler (sfolder);
 					MSBuildProjectService.SetId (sfolder, projectGuid);
 
-					List<string> projLines = lines.GetRange (sec.Start + 1, sec.Count - 2);
+					projLines = lines.GetRange (sec.Start + 1, sec.Count - 2);
 					DeserializeSolutionItem (sol, sfolder, projLines);
 					
 					foreach (string f in ReadFolderFiles (projLines))
@@ -801,21 +800,25 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 				SolutionEntityItem item = null;
 				
 				try {
-					item = ProjectExtensionUtil.LoadSolutionItem (monitor, projectPath, delegate {
-						return MSBuildProjectService.LoadItem (monitor, projectPath, format, projTypeGuid, projectGuid);
-					});
-					
-					if (item == null) {
-						throw new UnknownSolutionItemTypeException (projTypeGuid);
+					if (sol.IsSolutionItemEnabled (projectPath)) {
+						item = ProjectExtensionUtil.LoadSolutionItem (monitor, projectPath, delegate {
+							return MSBuildProjectService.LoadItem (monitor, projectPath, format, projTypeGuid, projectGuid);
+						});
+						
+						if (item == null) {
+							throw new UnknownSolutionItemTypeException (projTypeGuid);
+						}
+					} else {
+						var uitem = new UnknownSolutionItem () {
+							FileName = projectPath,
+							UnloadedEntry = true
+						};
+						var h = new MSBuildHandler (projTypeGuid, projectGuid) {
+							Item = uitem,
+						};
+						uitem.SetItemHandler (h);
+						item = uitem;
 					}
-
-					MSBuildHandler handler = (MSBuildHandler) item.ItemHandler;
-					List<string> projLines = lines.GetRange (sec.Start + 1, sec.Count - 2);
-					DataItem it = GetSolutionItemData (projLines);
-
-					handler.UnresolvedProjectDependencies = ReadSolutionItemDependencies (projLines);
-					handler.SlnProjectContent = projLines.ToArray ();
-					handler.ReadSlnData (it);
 					
 				} catch (Exception e) {
 					// If we get a TargetInvocationException from using Activator.CreateInstance we
@@ -862,7 +865,15 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 					uitem.SetItemHandler (h);
 					item = uitem;
 				}
-				
+
+				MSBuildHandler handler = (MSBuildHandler) item.ItemHandler;
+				projLines = lines.GetRange (sec.Start + 1, sec.Count - 2);
+				DataItem it = GetSolutionItemData (projLines);
+
+				handler.UnresolvedProjectDependencies = ReadSolutionItemDependencies (projLines);
+				handler.SlnProjectContent = projLines.ToArray ();
+				handler.ReadSlnData (it);
+
 				if (!items.ContainsKey (projectGuid)) {
 					items.Add (projectGuid, item);
 					sortedList.Add (item);
@@ -939,6 +950,17 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 
 			data.GlobalExtra = globalLines;
 			monitor.EndTask ();
+
+			// When reloading a project, keep the solution data and item id
+			sol.SolutionItemAdded += delegate(object sender, SolutionItemChangeEventArgs e) {
+				if (e.Reloading) {
+					ItemSlnData.TransferData (e.ReplacedItem, e.SolutionItem);
+					var ih = e.SolutionItem.ItemHandler as MSBuildHandler;
+					if (ih != null)
+						ih.ItemId = e.ReplacedItem.ItemId;
+				}
+			};
+
 			return folder;
 		}
 
@@ -1036,12 +1058,6 @@ namespace MonoDevelop.Projects.Formats.MSBuild
 
 				SolutionEntityItem item;
 				if (slnData.ItemsByGuid.TryGetValue (projGuid, out item)) {
-					if (item is UnknownSolutionItem) {
-						ItemSlnData data = ItemSlnData.ForItem (item);
-						data.ConfigLines.Add (lines [lineNum]);
-						extras.RemoveAt (extras.Count - 1);
-						continue;
-					}
 					string key = projGuid + "." + slnConfig;
 					SolutionConfigurationEntry combineConfigEntry = null;
 					if (cache.ContainsKey (key)) {

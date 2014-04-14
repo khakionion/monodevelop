@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Collections.Generic;
 
+
 using MonoDevelop.Core;
 using MonoDevelop.Ide.Commands;
 using MonoDevelop.Ide.Gui.Pads.ProjectPad;
@@ -32,15 +33,20 @@ namespace MonoDevelop.VersionControl
 			VersionControlService.FileStatusChanged += Monitor;
 		}
 
+
 		protected override void Initialize ()
 		{
 			base.Initialize ();
+			VersionControlService.FileStatusChanged += Monitor;
 		}
+
 
 		public override void Dispose ()
 		{
+			VersionControlService.FileStatusChanged -= Monitor;
 			base.Dispose ();
 		}
+
 
 		public override void BuildNode (ITreeBuilder builder, object dataObject, ref string label, ref Gdk.Pixbuf icon, ref Gdk.Pixbuf closedIcon)
 		{

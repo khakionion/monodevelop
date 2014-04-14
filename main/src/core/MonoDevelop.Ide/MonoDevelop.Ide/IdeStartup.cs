@@ -311,6 +311,7 @@ namespace MonoDevelop.Ide
 			
 			Runtime.Shutdown ();
 			InstrumentationService.Stop ();
+			AddinManager.AddinLoadError -= OnAddinError;
 			
 			return 0;
 		}
@@ -526,7 +527,7 @@ namespace MonoDevelop.Ide
 			}
 		}
 
-		void SetupExceptionManager ()
+		static void SetupExceptionManager ()
 		{
 			System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (sender, e) => {
 				HandleException (e.Exception.Flatten (), false);
@@ -543,7 +544,7 @@ namespace MonoDevelop.Ide
 			};
 		}
 		
-		void HandleException (Exception ex, bool willShutdown)
+		static void HandleException (Exception ex, bool willShutdown)
 		{
 			var msg = String.Format ("An unhandled exception has occured. Terminating MonoDevelop? {0}", willShutdown);
 
