@@ -196,7 +196,7 @@ namespace MonoDevelop.Ide.CodeTemplates
 			}
 		}
 		
-		static List<CodeTemplate> LoadTemplates ()
+		static List<CodeTemplate> OldLoadTemplates ()
 		{
 			const string ManifestResourceName = "MonoDevelop-templates.xml";
 			List<CodeTemplate> builtinTemplates = LoadTemplates (XmlTextReader.Create (typeof (CodeTemplateService).Assembly.GetManifestResourceStream (ManifestResourceName)));
@@ -227,6 +227,49 @@ namespace MonoDevelop.Ide.CodeTemplates
 				return result;
 			}
 			
+			LoggingService.LogInfo ("CodeTemplateService: No user templates, reading default templates.");
+			return builtinTemplates;
+		}
+
+		static List<CodeTemplate> LoadTemplates ()
+		{
+			const string ManifestResourceName = "MonoDevelop-templates.xml";
+			const string UnityJSResourceName = "UnityJavascript.template.xml";
+			const string UnityCSharpResourceName = "UnityCSharp.template.xml";
+			const string UnityBooResourceName = "UnityBoo.template.xml";
+			//load all default templates
+			List<CodeTemplate> builtinTemplates = LoadTemplates (XmlTextReader.Create (typeof (CodeTemplateService).Assembly.GetManifestResourceStream (ManifestResourceName)));
+			//add three extra sets for Unity devs
+			builtinTemplates.AddRange (LoadTemplates(XmlTextReader.Create(typeof(CodeTemplateService).Assembly.GetManifestResourceStream (UnityJSResourceName))));
+			builtinTemplates.AddRange (LoadTemplates(XmlTextReader.Create(typeof(CodeTemplateService).Assembly.GetManifestResourceStream (UnityCSharpResourceName))));
+			builtinTemplates.AddRange (LoadTemplates(XmlTextReader.Create(typeof(CodeTemplateService).Assembly.GetManifestResourceStream (UnityBooResourceName))));
+			if (Directory.Exists (TemplatePath)) {
+				List<CodeTemplate> result = new List<CodeTemplate> ();
+				foreach (string templateFile in Directory.GetFiles (TemplatePath, "*.xml")) {
+					result.AddRange (LoadTemplates (XmlTextReader.Create (templateFile)));
+				}
+
+				// merge user templates with built in templates
+				for (int i = 0; i < builtinTemplates.Count; i++) {
+					CodeTemplate curTemplate = builtinTemplates[i];
+					bool found = false;
+					for (int j = 0; j < result.Count; j++) {
+						CodeTemplate curResultTemplate = result[j];
+						if (curTemplate.Shortcut == curResultTemplate.Shortcut) {
+							found = true;
+							if (curResultTemplate.Version != curTemplate.Version)
+								result[j] = curTemplate;
+						}
+					}
+					// template is new, insert it.
+					if (!found) 
+						result.Add (curTemplate);
+				}
+
+
+				return result;
+			}
+
 			LoggingService.LogInfo ("CodeTemplateService: No user templates, reading default templates.");
 			return builtinTemplates;
 		}
