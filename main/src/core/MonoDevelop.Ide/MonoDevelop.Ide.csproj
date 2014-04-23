@@ -1118,14 +1118,8 @@
     <EmbeddedResource Include="icons\issuestatus-warning-16.png">
       <LogicalName>issuestatus-warning-16.png</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="MonoDevelop.Ide.CodeTemplates\UnityBoo.template.xml">
-      <LogicalName>UnityBoo.template.xml</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="MonoDevelop.Ide.CodeTemplates\UnityCSharp.template.xml">
-      <LogicalName>UnityCSharp.template.xml</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="MonoDevelop.Ide.CodeTemplates\UnityJavascript.template.xml">
-      <LogicalName>UnityJavascript.template.xml</LogicalName>
+    <EmbeddedResource Include="MonoDevelop.Ide.CodeTemplates\Unity.template.xml">
+      <LogicalName>Unity.template.xml</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
