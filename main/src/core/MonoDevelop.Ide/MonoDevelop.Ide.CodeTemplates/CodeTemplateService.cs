@@ -234,15 +234,11 @@ namespace MonoDevelop.Ide.CodeTemplates
 		static List<CodeTemplate> LoadTemplates ()
 		{
 			const string ManifestResourceName = "MonoDevelop-templates.xml";
-			const string UnityJSResourceName = "UnityJavascript.template.xml";
-			const string UnityCSharpResourceName = "UnityCSharp.template.xml";
-			const string UnityBooResourceName = "UnityBoo.template.xml";
+			const string UnityResourceName = "Unity.template.xml";
 			//load all default templates
 			List<CodeTemplate> builtinTemplates = LoadTemplates (XmlTextReader.Create (typeof (CodeTemplateService).Assembly.GetManifestResourceStream (ManifestResourceName)));
 			//add three extra sets for Unity devs
-			builtinTemplates.AddRange (LoadTemplates(XmlTextReader.Create(typeof(CodeTemplateService).Assembly.GetManifestResourceStream (UnityJSResourceName))));
-			builtinTemplates.AddRange (LoadTemplates(XmlTextReader.Create(typeof(CodeTemplateService).Assembly.GetManifestResourceStream (UnityCSharpResourceName))));
-			builtinTemplates.AddRange (LoadTemplates(XmlTextReader.Create(typeof(CodeTemplateService).Assembly.GetManifestResourceStream (UnityBooResourceName))));
+			builtinTemplates.AddRange (LoadTemplates(XmlTextReader.Create(typeof(CodeTemplateService).Assembly.GetManifestResourceStream (UnityResourceName))));
 			if (Directory.Exists (TemplatePath)) {
 				List<CodeTemplate> result = new List<CodeTemplate> ();
 				foreach (string templateFile in Directory.GetFiles (TemplatePath, "*.xml")) {
