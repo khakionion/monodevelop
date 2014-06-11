@@ -1037,10 +1037,11 @@ namespace Mono.Debugging.Evaluation
 				if (i != -1)
 					ttype = GetType (ctx, data.ProxyType.Substring (0, i).Trim (), typeArgs);
 			}
-			if (ttype == null)
-				throw new EvaluatorException ("Unknown type '{0}'", data.ProxyType);
 
-			try {
+			try
+			{
+				if (ttype == null)
+					throw new EvaluatorException ("Unknown type '{0}'", data.ProxyType);
 				object val = CreateValue (ctx, ttype, obj);
 				return val ?? obj;
 			} catch (Exception ex) {
