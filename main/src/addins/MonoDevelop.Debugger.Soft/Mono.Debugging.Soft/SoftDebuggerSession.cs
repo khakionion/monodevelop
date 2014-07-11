@@ -1817,6 +1817,9 @@ namespace Mono.Debugging.Soft
 		
 		static string ResolveFullPath (string path)
 		{
+			if (string.IsNullOrEmpty (path))
+				return path;
+
 			if (IsWindows)
 				return Path.GetFullPath (path);
 
