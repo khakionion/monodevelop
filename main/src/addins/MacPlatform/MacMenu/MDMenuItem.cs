@@ -111,7 +111,7 @@ namespace MonoDevelop.MacIntegration.MacMenu
 					n.Hidden = true;
 					n.Target = this;
 					lastSeparator = n;
-					parent.InsertItem (n, index++);
+					parent.InsertItematIndex (n, index++);
 					continue;
 				}
 
@@ -131,7 +131,7 @@ namespace MonoDevelop.MacIntegration.MacMenu
 
 				if (!item.Hidden)
 					MDMenu.ShowLastSeparator (ref lastSeparator);
-				parent.InsertItem (item, index++);
+				parent.InsertItematIndex (item, index++);
 			}
 		}
 
