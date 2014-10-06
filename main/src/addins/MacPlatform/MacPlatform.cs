@@ -592,6 +592,8 @@ end tell", directory.ToString ().Replace ("\"", "\\\"")));
 
 		internal override MainToolbar CreateMainToolbar (Gtk.Window window)
 		{
+			NSApplication.Init ();
+			
 			NSWindow w = GtkQuartz.GetWindow (window);
 			w.IsOpaque = false;
 			
