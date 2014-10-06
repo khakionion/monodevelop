@@ -194,13 +194,12 @@ namespace MonoDevelop.MacIntegration
 
 				NSApplication.SharedApplication.HelpMenu = null;
 
-				var rootMenu = NSApplication.SharedApplication.MainMenu;
-				if (rootMenu == null) {
-					rootMenu = new NSMenu ();
-					NSApplication.SharedApplication.MainMenu = rootMenu;
-				} else {
-					rootMenu.RemoveAllItems ();
+				var rootMenu = new NSMenu ();
+				var m = NSApplication.SharedApplication.MainMenu;
+				if (m != null) {
+					m.Dispose ();
 				}
+				NSApplication.SharedApplication.MainMenu = rootMenu;
 
 				CommandEntrySet appCes = commandManager.CreateCommandEntrySet (appMenuAddinPath);
 				rootMenu.AddItem (new MDSubMenuItem (commandManager, appCes));
