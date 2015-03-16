@@ -204,7 +204,7 @@ namespace MonoDevelop.Ide.Gui
 					return false;
 				if (toplevel == RootWindow)
 					return true;
-				var dock = toplevel as MonoDevelop.Components.Docking.DockFloatingWindow;
+				var dock = toplevel as DockFloatingWindow;
 				return dock != null && dock.DockParent == RootWindow;
 			}
 		}
@@ -979,7 +979,7 @@ namespace MonoDevelop.Ide.Gui
 				
 				foreach (DocumentUserPrefs doc in prefs.Files.Distinct (new DocumentUserPrefsFilenameComparer ())) {
 					string fileName = baseDir.Combine (doc.FileName).FullPath;
-					if (File.Exists (fileName)) {
+					if (GetDocument(fileName) == null && File.Exists (fileName)) {
 						// TODO: Get the correct project.
 						var view = IdeApp.Workbench.BatchOpenDocument (pm, fileName, null, doc.Line, doc.Column);
 						if (fileName == currentFileName)
@@ -1010,8 +1010,19 @@ namespace MonoDevelop.Ide.Gui
 			foreach (PadUserPrefs pi in prefs.Pads) {
 				foreach (Pad pad in IdeApp.Workbench.Pads) {
 
-					if (pi.Id == pad.Id) {
-						pad.InternalContent.SetPreferences(pi);
+					if (pi.Id == pad.Id && pad.Content is IMementoCapable) {
+						try {
+							string xml = pi.State.OuterXml;
+							IMementoCapable m = (IMementoCapable) pad.Content; 
+							XmlReader innerReader = new XmlTextReader (new StringReader (xml));
+							innerReader.MoveToContent ();
+							ICustomXmlSerializer cs = (ICustomXmlSerializer)m.Memento;
+							if (cs != null)
+								m.Memento = cs.ReadFrom (innerReader);
+						} catch (Exception ex) {
+							LoggingService.LogError ("Error loading view memento.", ex);
+						}
+
 						break;
 					}
 				}

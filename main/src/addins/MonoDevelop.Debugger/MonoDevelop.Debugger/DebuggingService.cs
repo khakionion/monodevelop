@@ -77,6 +77,8 @@ namespace MonoDevelop.Debugger
 		static bool isBusy;
 		static StatusBarIcon busyStatusIcon;
 
+		static bool IdeExiting = false;
+
 		static public event EventHandler DebugSessionStarted;
 		static public event EventHandler PausedEvent;
 		static public event EventHandler ResumedEvent;
@@ -110,6 +112,8 @@ namespace MonoDevelop.Debugger
 				// Refresh the evaluators list
 				evaluators = null;
 			});
+
+			IdeApp.Exiting += (object sender, ExitEventArgs args) => IdeExiting = true;
         }
 
 		public static IExecutionHandler GetExecutionHandler ()
@@ -387,8 +391,16 @@ namespace MonoDevelop.Debugger
 			currentSession.TargetEvent -= OnTargetEvent;
 			currentSession.TargetStarted -= OnStarted;
 
+			if (busyStatusIcon != null) {
+				busyStatusIcon.Dispose ();
+				busyStatusIcon = null;
+			}
+			
+			session.TargetEvent -= OnTargetEvent;
+			session.TargetStarted -= OnStarted;
 			currentSession.BreakpointTraceHandler = null;
 			currentSession.GetExpressionEvaluator = null;
+			session.BusyStateChanged -= OnBusyStateChanged;
 			currentSession.TypeResolverHandler = null;
 			currentSession.OutputWriter = null;
 			currentSession.LogWriter = null;
@@ -413,6 +425,7 @@ namespace MonoDevelop.Debugger
 				NotifyCurrentFrameChanged ();
 				NotifyLocationChanged ();
 			});
+			
 
 			currentSession.Dispose ();
 		}
@@ -574,6 +587,29 @@ namespace MonoDevelop.Debugger
 				Cleanup ();
 				throw;
 			}
+		}
+
+		static void ShowDebugCommandBar ()
+		{
+			// Dispatch synchronously to avoid start/stop races
+			DispatchService.GuiSyncDispatch (delegate {
+				oldLayout = IdeApp.Workbench.CurrentLayout;
+				IdeApp.Workbench.CurrentLayout = "Debug";
+				IdeApp.Workbench.ShowCommandBar ("Debug");
+			});
+		}
+
+		static void HideDebugCommandBar (string layout)
+		{
+			if (IdeExiting)
+				return;
+
+			// Dispatch asynchronously to avoid start/stop races
+			DispatchService.GuiSyncDispatch (delegate {
+				IdeApp.Workbench.HideCommandBar ("Debug");
+				if (IdeApp.Workbench.CurrentLayout == "Debug")
+					IdeApp.Workbench.CurrentLayout = layout;
+			});
 		}
 		
 		static bool ExceptionHandler (Exception ex)

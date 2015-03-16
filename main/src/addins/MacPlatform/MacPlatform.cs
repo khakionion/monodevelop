@@ -206,6 +206,7 @@ namespace MonoDevelop.MacIntegration
 
 			try {
 				InitApp (commandManager);
+				CommandEntrySet ces = commandManager.CreateCommandEntrySet (commandMenuAddinPath);
 
 				NSApplication.SharedApplication.HelpMenu = null;
 
@@ -220,7 +221,6 @@ namespace MonoDevelop.MacIntegration
 				CommandEntrySet appCes = commandManager.CreateCommandEntrySet (appMenuAddinPath);
 				rootMenu.AddItem (new MDSubMenuItem (commandManager, appCes));
 
-				CommandEntrySet ces = commandManager.CreateCommandEntrySet (commandMenuAddinPath);
 				foreach (CommandEntry ce in ces) {
 					rootMenu.AddItem (new MDSubMenuItem (commandManager, (CommandEntrySet) ce));
 				}
@@ -310,7 +310,12 @@ namespace MonoDevelop.MacIntegration
 				ApplicationEvents.Reopen += delegate (object sender, ApplicationEventArgs e) {
 					if (IdeApp.Workbench != null && IdeApp.Workbench.RootWindow != null) {
 						IdeApp.Workbench.RootWindow.Deiconify ();
-						IdeApp.Workbench.RootWindow.Visible = true;
+
+						// This is a workaround to a GTK+ bug. The HasTopLevelFocus flag is not properly
+						// set when the main window is restored. The workaround is to hide and re-show it.
+						// Since this happens before the next mainloop cycle, the window isn't actually affected.
+						IdeApp.Workbench.RootWindow.Hide ();
+						IdeApp.Workbench.RootWindow.Show ();
 
 						IdeApp.Workbench.RootWindow.Present ();
 						e.Handled = true;
@@ -326,40 +331,28 @@ namespace MonoDevelop.MacIntegration
 					});
 					e.Handled = true;
 				};
+				
+				//if not running inside an app bundle, assume usual MD build layout and load the app icon
+				FilePath exePath = System.Reflection.Assembly.GetExecutingAssembly ().Location;
+				string iconFile = null;
 
-				ApplicationEvents.OpenUrls += delegate (object sender, ApplicationUrlEventArgs e) {
-					GLib.Timeout.Add (10, delegate {
-						// Open files via the monodevelop:// URI scheme, compatible with the
-						// common TextMate scheme: http://blog.macromates.com/2007/the-textmate-url-scheme/
-						IdeApp.OpenFiles (e.Urls.Select (url => {
-							try {
-								var uri = new Uri (url);
-								if (uri.Host != "open")
-									return null;
-
-								var qs = System.Web.HttpUtility.ParseQueryString (uri.Query);
-								var fileUri = new Uri (qs ["file"]);
-
-								int line, column;
-								if (!Int32.TryParse (qs ["line"], out line))
-									line = 1;
-								if (!Int32.TryParse (qs ["column"], out column))
-									column = 1;
-
-								return new FileOpenInformation (fileUri.AbsolutePath,
-									line, column, OpenDocumentOptions.Default);
-							} catch (Exception ex) {
-								LoggingService.LogError ("Invalid TextMate URI: " + url, ex);
-								return null;
-							}
-						}).Where (foi => foi != null));
-						return false;
-					});
-				};
-
-				//if not running inside an app bundle (at dev time), need to do some additional setup
-				if (NSBundle.MainBundle.InfoDictionary ["CFBundleIdentifier"] == null) {
-					SetupWithoutBundle ();
+				iconFile = BrandingService.GetString ("ApplicationIcon");
+				if (iconFile != null) {
+					iconFile = BrandingService.GetFile (iconFile);
+				}
+				else if (!exePath.ToString ().Contains ("MonoDevelop.app")) {
+						var mdSrcMain = exePath.ParentDirectory.ParentDirectory.ParentDirectory;
+						iconFile = mdSrcMain.Combine ("theme-icons", "Mac", "monodevelop.icns");
+				} else {
+					//HACK: override the app image
+					//NSApplication doesn't seem to pick up the image correctly, probably due to the
+					//getting confused about the bundle root because of the launch script
+					var bundleContents = exePath.ParentDirectory.ParentDirectory.ParentDirectory
+						.ParentDirectory.ParentDirectory;
+					iconFile = bundleContents.Combine ("Resources", "monodevelop.icns");
+				}
+				if (File.Exists (iconFile)) {
+					NSApplication.SharedApplication.ApplicationIconImage = new NSImage (iconFile);
 				}
 			} catch (Exception ex) {
 				LoggingService.LogError ("Could not install app event handlers", ex);
@@ -408,48 +401,51 @@ namespace MonoDevelop.MacIntegration
 		static void HandleDeleteEvent (object o, Gtk.DeleteEventArgs args)
 		{
 			args.RetVal = true;
-			NSApplication.SharedApplication.Hide (NSApplication.SharedApplication);
+			//MacHideOthersHandler.RunMenuCommand (CarbonCommandID.Hide);
 		}
 
 		public static Gdk.Pixbuf GetPixbufFromNSImageRep (NSImageRep rep, int width, int height)
 		{
 			var rect = new RectangleF (0, 0, width, height);
-
 			var bitmap = rep as NSBitmapImageRep;
-			try {
-				if (bitmap == null) {
-					using (var cgi = rep.AsCGImage (ref rect, null, null)) {
-						if (cgi == null)
-							return null;
-						bitmap = new NSBitmapImageRep (cgi);
-					}
-				}
-				return GetPixbufFromNSBitmapImageRep (bitmap, width, height);
-			} finally {
-				if (bitmap != null)
-					bitmap.Dispose ();
+			
+			if (bitmap == null) {
+				using (var cgi = rep.AsCGImage (ref rect, null, null))
+					bitmap = new NSBitmapImageRep (cgi);
 			}
-		}
-
-		public static Gdk.Pixbuf GetPixbufFromNSImage (NSImage icon, int width, int height)
-		{
-			var rect = new RectangleF (0, 0, width, height);
-
-			var rep = icon.BestRepresentation (rect, null, null);
-			var bitmap = rep as NSBitmapImageRep;
+			
 			try {
-				if (bitmap == null) {
-					if (rep != null)
-						rep.Dispose ();
-					using (var cgi = icon.AsCGImage (ref rect, null, null)) {
-						if (cgi == null)
-							return null;
-						bitmap = new NSBitmapImageRep (cgi);
-					}
+				byte[] data;
+				using (var tiff = bitmap.TiffRepresentation) {
+					data = new byte[tiff.Length];
+					System.Runtime.InteropServices.Marshal.Copy (tiff.Bytes, data, 0, data.Length);
 				}
-				return GetPixbufFromNSBitmapImageRep (bitmap, width, height);
+				
+				int pw = bitmap.PixelsWide, ph = bitmap.PixelsHigh;
+				var pixbuf = new Gdk.Pixbuf (data, pw, ph);
+				
+				// if one dimension matches, and the other is same or smaller, use as-is
+				if ((pw == width && ph <= height) || (ph == height && pw <= width))
+					return pixbuf;
+				
+				// otherwise scale proportionally such that the largest dimension matches the desired size
+				if (pw == ph) {
+					pw = width;
+					ph = height;
+				} else if (pw > ph) {
+					ph = (int) (width * ((float) ph / pw));
+					pw = width;
+				} else {
+					pw = (int) (height * ((float) pw / ph));
+					ph = height;
+				}
+				
+				var scaled = pixbuf.ScaleSimple (pw, ph, Gdk.InterpType.Bilinear);
+				pixbuf.Dispose ();
+				
+				return scaled;
 			} finally {
-				if (bitmap != null)
+				if (bitmap != rep)
 					bitmap.Dispose ();
 			}
 		}
@@ -511,8 +507,14 @@ namespace MonoDevelop.MacIntegration
 			if (!Gtk.Icon.SizeLookup (Gtk.IconSize.Menu, out w, out h)) {
 				w = h = 22;
 			}
+			var rect = new System.Drawing.RectangleF (0, 0, w, h);
+			
+			using (var rep = icon.BestRepresentation (rect, null, null)) {
+				if (rep == null)
+					return base.OnGetPixbufForFile (filename, size);
 				
-			return GetPixbufFromNSImage (icon, w, h) ?? base.OnGetPixbufForFile (filename, size);
+				return GetPixbufFromNSImageRep (rep, w, h);
+			}
 		}
 		
 		public override IProcessAsyncOperation StartConsoleProcess (string command, string arguments, string workingDirectory,
@@ -701,6 +703,7 @@ namespace MonoDevelop.MacIntegration
 				Background = MonoDevelop.Components.CairoExtensions.LoadImage (typeof (MacPlatformService).Assembly, resource),
 				TitleBarHeight = GetTitleBarHeight ()
 			};
+
 			return result;
 		}
 
@@ -740,7 +743,7 @@ namespace MonoDevelop.MacIntegration
 		{
 			var toplevels = GtkQuartz.GetToplevels ();
 
-			return toplevels.Any (t => t.Key.IsVisible && (t.Value == null || t.Value.Modal) && !t.Key.DebugDescription.StartsWith("<NSStatusBarWindow"));
+			return GtkQuartz.GetToplevels ().Any (t => t.Key.IsVisible && (t.Value == null || t.Value.Modal));
 		}
 	}
 }
