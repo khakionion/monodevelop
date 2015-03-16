@@ -21,18 +21,19 @@ sub main {
 	
 	#parse CLI options
 	my $options = GetOptions("force-mac-build" => \$forceMacBuild, "skip-update" => \$skipUpdate);
-	if(!$forceMacBuild) {
-		die "MonoDevelop for Mac must be built on a Linux machine" if $^O ne "linux";
-	}
-	else {
-		#building on Mac, re-set some variables
-		$ENV{PKG_CONFIG_PATH} = "/Library/Frameworks/Mono.framework/Versions/Current/lib/pkgconfig";
-		$nant = "mono --runtime=v4.0 /usr/local/share/NAnt/bin/NAnt.exe -t:mono-4.0";
-	}
 	get_root();
 	if(!$skipUpdate) {
 		prepare_sources();
 	}
+	if(!$forceMacBuild) {
+		die "MonoDevelop for Mac must be built on a Linux machine" if $^O ne "linux";
+	}
+	else {
+		#building on Mac, re-set some variables and depend on the bootstrapped nant
+		$ENV{PKG_CONFIG_PATH} = "/Library/Frameworks/Mono.framework/Versions/Current/lib/pkgconfig";
+		$nant = "mono --runtime=v4.0 $root/nant/bootstrap/NAnt.exe -t:mono-4.0"
+	}
+	build_nant();
 	build_monodevelop();
 	build_debugger();
 	# build_monodevelop_hg();
@@ -72,6 +73,10 @@ sub prepare_sources {
 		printf ("Pulling laest boo-md-addins . . .\n");
 		chdir "$root/boo-md-addins";
 		system ("git pull") && die ("failed to update boo-md-addins");
+		printf ("Pulling latest NAnt . . .\n");
+		chdir "$root/nant";
+		system ("git pull") && die ("failed to update NAnt");
+		printf ("Pulling latest monodevelop-hg. . .\n");
 		# chdir "$root/monodevelop-hg";
 		# system ("hg pull --update") && die ("failed to update monodevelop-hg");
 	}
@@ -84,6 +89,13 @@ sub prepare_sources {
 	die ("Must grab Boo extensions") if !-d "boo-extensions";
 	die ("Must grab Boo MD addins implementation") if !-d "boo-md-addins";
 	die ("Must grab Unityscript implementation") if !-d "unityscript";
+	die ("Must grab NAnt") if !-d "nant";
+}
+
+#only builds the bootstrap NAnt, it's all we need for Boo
+sub build_nant {
+	chdir "$root/nant";
+	system("make bootstrap") && die("Failed building NAnt");
 }
 
 sub build_monodevelop {
